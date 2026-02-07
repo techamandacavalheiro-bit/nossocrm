@@ -3,34 +3,23 @@
 import React, { useState, useMemo } from 'react';
 import { Search, Send, ChevronDown, ChevronUp, X, FileText, CheckCircle, Clock, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type {
+  MessagingTemplate,
+  TemplateComponent,
+  TemplateCategory,
+  TemplateStatus,
+} from '@/lib/messaging/types';
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
-export interface TemplateData {
-  id: string;
-  name: string;
-  language: string;
-  category: 'marketing' | 'utility' | 'authentication';
-  status: 'pending' | 'approved' | 'rejected' | 'paused';
-  components: TemplateComponent[];
-}
-
-interface TemplateComponent {
-  type: 'HEADER' | 'BODY' | 'FOOTER' | 'BUTTONS';
-  format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT';
-  text?: string;
-  buttons?: {
-    type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER';
-    text: string;
-  }[];
-}
+export type TemplateData = MessagingTemplate;
 
 interface TemplateSelectorProps {
-  templates: TemplateData[];
+  templates: MessagingTemplate[];
   isLoading?: boolean;
-  onSelect: (template: TemplateData, params?: Record<string, string>) => void;
+  onSelect: (template: MessagingTemplate, params?: Record<string, string>) => void;
   onCancel: () => void;
   className?: string;
 }
@@ -39,7 +28,7 @@ interface TemplateSelectorProps {
 // CATEGORY CONFIG
 // =============================================================================
 
-const CATEGORY_CONFIG = {
+const CATEGORY_CONFIG: Record<TemplateCategory, { label: string; color: string }> = {
   marketing: {
     label: 'Marketing',
     color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
@@ -54,7 +43,7 @@ const CATEGORY_CONFIG = {
   },
 };
 
-const STATUS_CONFIG = {
+const STATUS_CONFIG: Record<TemplateStatus, { label: string; icon: typeof CheckCircle; color: string }> = {
   approved: {
     label: 'Aprovado',
     icon: CheckCircle,
@@ -91,7 +80,7 @@ function extractVariables(text: string): string[] {
   return matches;
 }
 
-function getTemplatePreview(template: TemplateData): string {
+function getTemplatePreview(template: MessagingTemplate): string {
   const bodyComponent = template.components.find((c) => c.type === 'BODY');
   return bodyComponent?.text || template.name;
 }
@@ -101,7 +90,7 @@ function getTemplatePreview(template: TemplateData): string {
 // =============================================================================
 
 interface TemplateCardProps {
-  template: TemplateData;
+  template: MessagingTemplate;
   isSelected: boolean;
   onClick: () => void;
 }
@@ -156,7 +145,7 @@ function TemplateCard({ template, isSelected, onClick }: TemplateCardProps) {
 // =============================================================================
 
 interface VariableFormProps {
-  template: TemplateData;
+  template: MessagingTemplate;
   values: Record<string, string>;
   onChange: (key: string, value: string) => void;
 }
@@ -212,7 +201,7 @@ function VariableForm({ template, values, onChange }: VariableFormProps) {
 // =============================================================================
 
 interface TemplatePreviewProps {
-  template: TemplateData;
+  template: MessagingTemplate;
   variables: Record<string, string>;
 }
 
@@ -276,7 +265,7 @@ export function TemplateSelector({
   className,
 }: TemplateSelectorProps) {
   const [search, setSearch] = useState('');
-  const [selectedTemplate, setSelectedTemplate] = useState<TemplateData | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<MessagingTemplate | null>(null);
   const [variables, setVariables] = useState<Record<string, string>>({});
   const [showPreview, setShowPreview] = useState(false);
 
@@ -290,7 +279,7 @@ export function TemplateSelector({
     );
   }, [templates, search]);
 
-  const handleSelectTemplate = (template: TemplateData) => {
+  const handleSelectTemplate = (template: MessagingTemplate) => {
     if (template.status !== 'approved') return;
     setSelectedTemplate(template);
     setVariables({});

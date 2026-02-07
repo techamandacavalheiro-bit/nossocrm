@@ -8,6 +8,7 @@ import {
   Loader2,
   MessageCircle,
   Instagram,
+  Mail,
   QrCode,
   Key,
   AlertCircle,
@@ -210,6 +211,52 @@ const PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
       '5. Gere um token de acesso e cole abaixo',
     ],
   },
+  'email:resend': {
+    name: 'Resend',
+    description: 'API moderna de email transacional. Setup simples, tracking completo.',
+    official: true,
+    fields: [
+      {
+        key: 'apiKey',
+        label: 'API Key',
+        type: 'password',
+        placeholder: 're_xxxxxxxxxxxx',
+        required: true,
+        helpText: 'Encontrada em resend.com/api-keys.',
+      },
+      {
+        key: 'fromName',
+        label: 'Nome do Remetente',
+        type: 'text',
+        placeholder: 'Sua Empresa',
+        required: true,
+        helpText: 'Nome que aparecerá no campo "De:" do email.',
+      },
+      {
+        key: 'fromEmail',
+        label: 'Email do Remetente',
+        type: 'text',
+        placeholder: 'noreply@suaempresa.com',
+        required: true,
+        helpText: 'Deve ser de um domínio verificado no Resend.',
+      },
+      {
+        key: 'replyTo',
+        label: 'Reply-To (opcional)',
+        type: 'text',
+        placeholder: 'contato@suaempresa.com',
+        required: false,
+        helpText: 'Endereço para receber respostas dos clientes.',
+      },
+    ],
+    setupUrl: 'https://resend.com/docs/getting-started',
+    setupInstructions: [
+      '1. Acesse resend.com e crie uma conta',
+      '2. Verifique seu domínio de email',
+      '3. Gere uma API Key em API Keys',
+      '4. Cole a chave e configure o remetente abaixo',
+    ],
+  },
 };
 
 // =============================================================================
@@ -219,7 +266,7 @@ const PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
 const CHANNEL_ICONS: Record<ChannelType, React.FC<{ className?: string }>> = {
   whatsapp: MessageCircle,
   instagram: Instagram,
-  email: () => null,
+  email: Mail,
   sms: () => null,
   telegram: () => null,
   voice: () => null,
@@ -237,6 +284,7 @@ function SelectStep({ onSelect }: SelectStepProps) {
   const availableChannels: { type: ChannelType; providers: string[] }[] = [
     { type: 'whatsapp', providers: CHANNEL_PROVIDERS.whatsapp },
     { type: 'instagram', providers: CHANNEL_PROVIDERS.instagram },
+    { type: 'email', providers: CHANNEL_PROVIDERS.email },
   ];
 
   return (

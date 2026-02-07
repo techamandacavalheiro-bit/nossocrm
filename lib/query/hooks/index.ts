@@ -135,3 +135,21 @@ export {
   useUpdateMessageStatus,
   useRetryMessage,
 } from './useMessagingMessagesQuery';
+
+// Messaging Templates (WhatsApp HSM)
+export {
+  useTemplatesQuery,
+  useApprovedTemplatesQuery,
+  useTemplateSyncMutation,
+  useSendTemplateMutation,
+} from './useTemplatesQuery';
+
+// Lead Routing Rules
+export {
+  useLeadRoutingRules,
+  useChannelsWithoutRoutingRules,
+  useBoardsWithStages,
+  useCreateLeadRoutingRule,
+  useUpdateLeadRoutingRule,
+  useDeleteLeadRoutingRule,
+} from './useLeadRoutingRulesQuery';

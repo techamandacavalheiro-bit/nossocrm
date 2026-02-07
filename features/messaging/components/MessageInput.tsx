@@ -1,9 +1,14 @@
 'use client';
 
 import React, { useState, useRef, useCallback } from 'react';
-import { Send, Paperclip, Smile, Clock } from 'lucide-react';
+import { Send, Paperclip, Smile, Clock, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSendTextMessage } from '@/lib/query/hooks/useMessagingMessagesQuery';
+import {
+  useApprovedTemplatesQuery,
+  useSendTemplateMutation,
+} from '@/lib/query/hooks/useTemplatesQuery';
+import { TemplateSelector, type TemplateData } from './TemplateSelector';
 import type { ConversationView } from '@/lib/messaging/types';
 
 interface MessageInputProps {
@@ -12,10 +17,40 @@ interface MessageInputProps {
 
 export function MessageInput({ conversation }: MessageInputProps) {
   const [text, setText] = useState('');
+  const [showTemplates, setShowTemplates] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { mutate: sendMessage, isPending } = useSendTextMessage();
+  const { mutate: sendTemplate, isPending: isSendingTemplate } = useSendTemplateMutation();
+  const { data: templates = [], isLoading: isLoadingTemplates } = useApprovedTemplatesQuery(
+    conversation.channelId
+  );
 
-  const isDisabled = conversation.isWindowExpired || isPending;
+  const isDisabled = conversation.isWindowExpired || isPending || isSendingTemplate;
+
+  const handleTemplateSelect = useCallback(
+    (template: TemplateData, params?: Record<string, string>) => {
+      // Convert params to API format
+      const bodyParams = params
+        ? Object.entries(params)
+            .sort(([a], [b]) => parseInt(a) - parseInt(b))
+            .map(([, value]) => ({ type: 'text' as const, text: value }))
+        : [];
+
+      sendTemplate(
+        {
+          conversationId: conversation.id,
+          templateId: template.id,
+          parameters: bodyParams.length > 0 ? { body: bodyParams } : undefined,
+        },
+        {
+          onSuccess: () => {
+            setShowTemplates(false);
+          },
+        }
+      );
+    },
+    [sendTemplate, conversation.id]
+  );
 
   const handleSubmit = useCallback((e?: React.FormEvent) => {
     e?.preventDefault();
@@ -49,24 +84,40 @@ export function MessageInput({ conversation }: MessageInputProps) {
     textarea.style.height = newHeight + 'px';
   }, []);
 
-  if (conversation.isWindowExpired) {
+  // Show template selector when window expired or when manually opened
+  if (showTemplates || conversation.isWindowExpired) {
     return (
-      <div className="p-4 border-t border-slate-200 dark:border-white/10 bg-orange-50 dark:bg-orange-900/20">
-        <div className="flex items-center gap-2 text-orange-700 dark:text-orange-300">
-          <Clock className="w-5 h-5" />
-          <div>
-            <p className="font-medium">Janela de resposta expirada</p>
-            <p className="text-sm opacity-80">
-              Use um template aprovado para reabrir a conversa
-            </p>
+      <div className="border-t border-slate-200 dark:border-white/10">
+        {conversation.isWindowExpired && !showTemplates && (
+          <div className="p-4 bg-orange-50 dark:bg-orange-900/20">
+            <div className="flex items-center gap-2 text-orange-700 dark:text-orange-300">
+              <Clock className="w-5 h-5" />
+              <div>
+                <p className="font-medium">Janela de resposta expirada</p>
+                <p className="text-sm opacity-80">
+                  Use um template aprovado para reabrir a conversa
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowTemplates(true)}
+              className="mt-3 px-4 py-2 text-sm font-medium bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors"
+            >
+              Enviar template
+            </button>
           </div>
-        </div>
-        <button
-          type="button"
-          className="mt-3 px-4 py-2 text-sm font-medium bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors"
-        >
-          Enviar template
-        </button>
+        )}
+        {showTemplates && (
+          <div className="h-[400px] bg-white dark:bg-slate-900">
+            <TemplateSelector
+              templates={templates}
+              isLoading={isLoadingTemplates || isSendingTemplate}
+              onSelect={handleTemplateSelect}
+              onCancel={() => setShowTemplates(false)}
+            />
+          </div>
+        )}
       </div>
     );
   }
@@ -112,6 +163,15 @@ export function MessageInput({ conversation }: MessageInputProps) {
           title="Emojis"
         >
           <Smile className="w-5 h-5" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowTemplates(true)}
+          className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg transition-colors"
+          title="Enviar template"
+        >
+          <FileText className="w-5 h-5" />
         </button>
 
         <button

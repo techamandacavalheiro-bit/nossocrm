@@ -22,6 +22,10 @@ export type {
 export { MetaInstagramProvider } from './instagram';
 export type { MetaInstagramCredentials } from './instagram';
 
+// Email providers
+export { ResendEmailProvider } from './email';
+export type { ResendCredentials, ResendWebhookPayload } from './email';
+
 // =============================================================================
 // FACTORY REGISTRATION
 // =============================================================================
@@ -29,6 +33,7 @@ export type { MetaInstagramCredentials } from './instagram';
 import { registerProvider } from '../channel-factory';
 import { ZApiWhatsAppProvider, MetaCloudWhatsAppProvider } from './whatsapp';
 import { MetaInstagramProvider } from './instagram';
+import { ResendEmailProvider } from './email';
 
 // Register Z-API provider
 registerProvider({
@@ -165,4 +170,48 @@ registerProvider({
     },
   ],
   features: ['media', 'read_receipts'],
+});
+
+// Register Resend Email provider
+registerProvider({
+  channelType: 'email',
+  providerName: 'resend',
+  constructor: ResendEmailProvider,
+  displayName: 'Resend',
+  description: 'Email transacional via Resend API (moderno, fácil setup)',
+  configFields: [
+    {
+      key: 'apiKey',
+      label: 'API Key',
+      type: 'password',
+      required: true,
+      placeholder: 're_xxxxxxxxxx',
+      helpText: 'Encontre em resend.com/api-keys',
+    },
+    {
+      key: 'fromName',
+      label: 'Nome do Remetente',
+      type: 'text',
+      required: true,
+      placeholder: 'Sua Empresa',
+      helpText: 'Nome que aparece no "De:" do email',
+    },
+    {
+      key: 'fromEmail',
+      label: 'Email do Remetente',
+      type: 'email',
+      required: true,
+      placeholder: 'noreply@suaempresa.com',
+      helpText: 'Deve ser de um domínio verificado no Resend',
+    },
+    {
+      key: 'replyTo',
+      label: 'Reply-To (opcional)',
+      type: 'email',
+      required: false,
+      placeholder: 'contato@suaempresa.com',
+      helpText: 'Endereço para receber respostas',
+    },
+  ],
+  features: ['read_receipts'],
 });

@@ -52,7 +52,10 @@ export function useChannelsQuery() {
       if (error) throw error;
 
       return (data || []).map((row) => {
-        const businessUnit = row.business_unit as { name: string } | null;
+        // business_unit is a single object from the FK join, but Supabase types it as array
+        const businessUnit = (Array.isArray(row.business_unit)
+          ? row.business_unit[0]
+          : row.business_unit) as { name: string } | null;
         return transformChannel({
           ...row,
           credentials: {},
