@@ -7,6 +7,7 @@ import { StatCard } from './components/StatCard';
 import { ActivityFeedItem } from './components/ActivityFeedItem';
 import { PipelineAlertsModal } from './components/PipelineAlertsModal';
 import { AIMetricsSection } from './components/AIMetricsSection';
+import { MessagingMetricsSection } from './components/MessagingMetricsSection';
 import { useDashboardMetrics, PeriodFilter, COMPARISON_LABELS } from './hooks/useDashboardMetrics';
 import { PeriodFilterSelect } from '@/components/filters/PeriodFilterSelect';
 import { LazyFunnelChart, ChartWrapper } from '@/components/charts';
@@ -273,6 +274,9 @@ const DashboardPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Messaging Metrics Section */}
+      <MessagingMetricsSection period={period} />
 
       {/* AI Performance Section */}
       <AIMetricsSection />

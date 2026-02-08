@@ -570,6 +570,7 @@ async function sendAIResponse(params: {
       content_type: 'text',
       content: { type: 'text', text: response },
       status: 'pending',
+      sender_type: 'ai',
       metadata: { sent_by_ai: true },
     })
     .select('id')

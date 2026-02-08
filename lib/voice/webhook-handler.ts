@@ -159,10 +159,13 @@ export async function processPostCallWebhook(
     await supabase.from('messaging_messages').insert({
       conversation_id: voiceCall.conversation_id,
       direction: 'outbound',
+      content_type: 'audio',
       content: {
         type: 'audio',
         text: `[Chamada de voz - ${metadata.call_duration_secs}s]\n\n${analysis.transcript_summary}`,
       },
+      status: 'sent',
+      sender_type: 'system',
       metadata: {
         sent_by_ai: true,
         voice_call_id: voiceCall.id,

@@ -56,6 +56,8 @@ export async function POST(request: NextRequest) {
       content: content as unknown as Record<string, unknown>,
       reply_to_message_id: replyToMessageId || null,
       status: 'pending' as const,
+      sender_user_id: user.id,
+      sender_type: 'user' as const,
       metadata: {},
     };
 

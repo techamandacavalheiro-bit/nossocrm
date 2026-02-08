@@ -155,6 +155,8 @@ export async function POST(request: NextRequest) {
       content_type: 'template' as const,
       content: messageContent as unknown as Record<string, unknown>,
       status: 'pending' as const,
+      sender_user_id: user.id,
+      sender_type: 'user' as const,
       metadata: {
         templateId: dbTemplate.id,
         templateExternalId: dbTemplate.external_id,

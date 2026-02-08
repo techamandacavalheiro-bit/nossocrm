@@ -111,6 +111,23 @@ export const queryKeys = {
     })),
 
     /**
+     * Messaging metrics query keys.
+     */
+    messagingMetrics: {
+        all: ['messagingMetrics'] as const,
+        byPeriod: (orgId: string, period: string, userId?: string) =>
+            ['messagingMetrics', orgId, period, userId] as const,
+    },
+
+    /**
+     * Organization members query keys (for filters/dropdowns).
+     */
+    orgMembers: {
+        all: ['orgMembers'] as const,
+        list: (orgId: string) => ['orgMembers', orgId] as const,
+    },
+
+    /**
      * Lead routing rules query keys.
      * Rules for automatic deal creation from messaging channels.
      */
