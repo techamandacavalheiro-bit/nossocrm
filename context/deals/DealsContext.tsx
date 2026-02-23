@@ -89,7 +89,13 @@ export const DealsProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   );
 
   const updateDeal = useCallback(async (id: string, updates: Partial<Deal>) => {
-    // Optimistic update - atualiza a UI imediatamente
+    // Cancel background refetches to prevent overwriting optimistic update
+    await queryClient.cancelQueries({ queryKey: DEALS_VIEW_KEY });
+
+    // Snapshot for rollback
+    const previousDeals = queryClient.getQueryData<DealView[]>(DEALS_VIEW_KEY);
+
+    // Optimistic update
     queryClient.setQueryData<DealView[]>(DEALS_VIEW_KEY, (old = []) =>
       old.map(deal =>
         deal.id === id ? { ...deal, ...updates, updatedAt: new Date().toISOString() } : deal
@@ -100,12 +106,14 @@ export const DealsProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     if (updateError) {
       console.error('Erro ao atualizar deal:', updateError.message);
-      // Rollback: invalida para refetch em caso de erro
-      await queryClient.invalidateQueries({ queryKey: queryKeys.deals.all });
+      // Rollback usando snapshot
+      if (previousDeals) {
+        queryClient.setQueryData(DEALS_VIEW_KEY, previousDeals);
+      }
       return;
     }
 
-    // Sucesso: Realtime vai sincronizar. Não precisa de invalidateQueries.
+    // Sucesso: Realtime vai sincronizar.
   }, [queryClient]);
 
   const updateDealStatus = useCallback(
