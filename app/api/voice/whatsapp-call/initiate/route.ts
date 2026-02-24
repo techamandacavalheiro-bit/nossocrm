@@ -42,6 +42,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
   }
 
+  // Check instance feature flag — prevents calls even if UI was bypassed
+  const { data: instanceFlags } = await supabase
+    .from('instance_feature_flags')
+    .select('whatsapp_calling_access')
+    .eq('organization_id', profile.organization_id)
+    .maybeSingle();
+
+  if (!instanceFlags?.whatsapp_calling_access) {
+    return NextResponse.json(
+      { error: 'WhatsApp Calling API access not enabled for this organization.' },
+      { status: 403 }
+    );
+  }
+
   // Get channel credentials + BIC permission in parallel
   const [channelResult, contactBicResult] = await Promise.all([
     supabase

@@ -39,6 +39,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
   }
 
+  // Check instance feature flag — only orgs approved by the operator can use calling
+  const { data: instanceFlags } = await supabase
+    .from('instance_feature_flags')
+    .select('whatsapp_calling_access')
+    .eq('organization_id', profile.organization_id)
+    .maybeSingle();
+
+  if (!instanceFlags?.whatsapp_calling_access) {
+    return NextResponse.json(
+      { error: 'WhatsApp Calling API access not enabled for this organization. Contact support.' },
+      { status: 403 }
+    );
+  }
+
   // Get channel
   const { data: channel } = await supabase
     .from('messaging_channels')

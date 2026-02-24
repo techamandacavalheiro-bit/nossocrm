@@ -210,6 +210,14 @@ export const queryKeys = {
         /** WhatsApp calling: active call */
         activeCall: () => ['voice', 'activeCall'] as const,
     },
+
+    /**
+     * Instance-level feature flags (operator-controlled, read-only for orgs).
+     */
+    instanceFlags: {
+        all: ['instanceFlags'] as const,
+        byOrg: (orgId: string) => ['instanceFlags', orgId] as const,
+    },
 };
 
 /**

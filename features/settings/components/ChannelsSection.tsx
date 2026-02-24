@@ -41,6 +41,7 @@ import {
   useToggleChannelStatusMutation,
 } from '@/lib/query/hooks/useChannelsQuery';
 import { useEnableWhatsAppCallingMutation } from '@/lib/query/hooks/useWhatsAppCallingQuery';
+import { useInstanceFlagsQuery } from '@/lib/query/hooks/useInstanceFlagsQuery';
 import {
   type MessagingChannel,
   type ChannelType,
@@ -520,9 +521,9 @@ function ChannelCard({
         )}
       </div>
 
-      {/* Calling Section - WhatsApp Meta Cloud only */}
+      {/* Calling Section - WhatsApp Meta Cloud only, gated by instance flag */}
       {channel.provider === 'meta-cloud' && channel.channelType === 'whatsapp' && (
-        <CallingToggle channel={channel} />
+        <CallingToggleGated channel={channel} />
       )}
     </div>
   );
@@ -583,6 +584,49 @@ function CallingToggle({ channel }: { channel: MessagingChannel }) {
       </div>
     </div>
   );
+}
+
+// =============================================================================
+// CALLING TOGGLE GATED (verifica instance_feature_flags antes de mostrar)
+// =============================================================================
+
+function CallingToggleGated({ channel }: { channel: MessagingChannel }) {
+  const { data: flags, isLoading } = useInstanceFlagsQuery();
+
+  if (isLoading) return null;
+
+  // Sem acesso: mostra estado bloqueado com CTA para contato
+  if (!flags?.whatsapp_calling_access) {
+    return (
+      <div className="border-t border-slate-100 dark:border-white/5 px-4 py-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Phone className="w-4 h-4 text-slate-400 dark:text-slate-500" />
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+              Chamadas WhatsApp
+            </span>
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-slate-500">
+              Não disponível
+            </span>
+          </div>
+          <a
+            href="mailto:suporte@nossocrm.com.br?subject=Solicitar acesso: WhatsApp Calling API"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium
+              bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10
+              text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10
+              transition-colors"
+          >
+            Solicitar acesso
+          </a>
+        </div>
+        <p className="mt-1.5 text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed">
+          Chamadas via WhatsApp requerem aprovação da Meta e habilitação pelo suporte.
+        </p>
+      </div>
+    );
+  }
+
+  return <CallingToggle channel={channel} />;
 }
 
 // =============================================================================
