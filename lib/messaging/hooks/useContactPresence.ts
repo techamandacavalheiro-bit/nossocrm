@@ -27,7 +27,7 @@ export function useContactPresence() {
   const { profile } = useAuth();
   const orgId = profile?.organization_id;
   const [presenceMap, setPresenceMap] = useState<Map<string, ContactPresence>>(new Map());
-  const timerRef = useRef<ReturnType<typeof setInterval>>();
+  const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   useEffect(() => {
     if (!orgId || !supabase) return;

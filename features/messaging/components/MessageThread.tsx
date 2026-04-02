@@ -4,12 +4,15 @@ import React, { useEffect, useRef, useCallback } from 'react';
 import { format, isSameDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Loader2, MessageSquare } from 'lucide-react';
+import { PresenceIndicator } from './PresenceIndicator';
 import { MessageBubble } from './MessageBubble';
 import { useMessagesInfinite } from '@/lib/query/hooks/useMessagesQuery';
 import type { MessagingMessage } from '@/lib/messaging/types';
 
 interface MessageThreadProps {
   conversationId: string;
+  /** Contact presence status from useContactPresence */
+  presenceStatus?: 'online' | 'typing' | 'recording' | 'offline';
 }
 
 function DateDivider({ date }: { date: Date }) {
@@ -35,7 +38,7 @@ function DateDivider({ date }: { date: Date }) {
   );
 }
 
-export function MessageThread({ conversationId }: MessageThreadProps) {
+export function MessageThread({ conversationId, presenceStatus }: MessageThreadProps) {
   const {
     data,
     isLoading,
@@ -165,6 +168,13 @@ export function MessageThread({ conversationId }: MessageThreadProps) {
         }
         return <MessageBubble key={item.message.id} message={item.message} />;
       })}
+
+      {/* Typing / recording indicator */}
+      {presenceStatus && presenceStatus !== 'offline' && presenceStatus !== 'online' && (
+        <div className="flex items-center gap-2 px-2 py-1.5">
+          <PresenceIndicator status={presenceStatus} showLabel size="md" />
+        </div>
+      )}
     </div>
   );
 }

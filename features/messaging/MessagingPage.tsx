@@ -34,6 +34,7 @@ import {
 import { Modal } from '@/components/ui/Modal';
 import { useRealtimeSyncMessaging } from '@/lib/realtime/useRealtimeSync';
 import { queryKeys } from '@/lib/query';
+import { useContactPresence } from '@/lib/messaging/hooks/useContactPresence';
 import type { ConversationView } from '@/lib/messaging/types';
 
 interface MessagingPageProps {
@@ -46,6 +47,7 @@ export function MessagingPage({ initialConversationId }: MessagingPageProps = {}
   const conversationIdParam = searchParams.get('id');
   const queryClient = useQueryClient();
   const { profile } = useAuth();
+  const { getPresence } = useContactPresence();
 
   const [selectedConversationId, setSelectedConversationId] = useState<string | undefined>(
     initialConversationId || conversationIdParam || undefined
@@ -145,6 +147,7 @@ export function MessagingPage({ initialConversationId }: MessagingPageProps = {}
         <ConversationList
           selectedId={selectedConversationId}
           onSelect={handleSelectConversation}
+          getPresence={getPresence}
         />
       </div>
 
@@ -263,7 +266,10 @@ export function MessagingPage({ initialConversationId }: MessagingPageProps = {}
             )}
 
             {/* Messages */}
-            <MessageThread conversationId={selectedConversation.id} />
+            <MessageThread
+              conversationId={selectedConversation.id}
+              presenceStatus={selectedConversation.contactId ? getPresence(selectedConversation.contactId) : undefined}
+            />
 
             {/* Input */}
             <MessageInput conversation={selectedConversation} />

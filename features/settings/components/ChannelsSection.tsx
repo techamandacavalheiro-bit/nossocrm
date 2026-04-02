@@ -137,7 +137,7 @@ const WEBHOOK_CONFIGS: Record<string, {
       { label: 'Ao enviar (Delivery)', description: 'Confirma que a mensagem enviada pelo CRM foi entregue ao WhatsApp' },
       { label: 'Ao conectar', description: 'Avisa quando o WhatsApp reconecta' },
       { label: 'Ao desconectar (Disconnected)', description: 'Avisa se o WhatsApp cair ou perder conexão' },
-      { label: 'Presença do chat', description: 'Não utilizado — pode deixar vazio' },
+      { label: 'Presença do chat', description: 'Mostra "online" e "digitando..." na tela de mensagens' },
     ],
     toggles: [
       'Ative "Notificar as enviadas por mim também" — senão mensagens enviadas pelo celular não aparecem no CRM',

@@ -7,18 +7,22 @@ import { Clock, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { sanitizeUrl } from '@/lib/utils/sanitize';
 import { ChannelIndicator } from './ChannelIndicator';
+import { PresenceIndicator } from './PresenceIndicator';
 import type { ConversationView } from '@/lib/messaging/types';
+import type { PresenceStatus } from '@/lib/messaging/hooks/useContactPresence';
 
 interface ConversationItemProps {
   conversation: ConversationView;
   isSelected: boolean;
   onClick: () => void;
+  presenceStatus?: PresenceStatus;
 }
 
 export const ConversationItem = memo(function ConversationItem({
   conversation,
   isSelected,
   onClick,
+  presenceStatus = 'offline',
 }: ConversationItemProps) {
   const {
     externalContactName,
@@ -68,6 +72,12 @@ export const ConversationItem = memo(function ConversationItem({
         <div className="absolute -bottom-0.5 -right-0.5">
           <ChannelIndicator type={channelType} size="sm" />
         </div>
+        {/* Presence dot */}
+        {presenceStatus !== 'offline' && (
+          <div className="absolute -top-0.5 -right-0.5">
+            <PresenceIndicator status={presenceStatus} size="sm" />
+          </div>
+        )}
       </div>
 
       {/* Content */}

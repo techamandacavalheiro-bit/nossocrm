@@ -12,6 +12,7 @@ interface ConversationListProps {
   selectedId?: string;
   onSelect: (conversationId: string) => void;
   businessUnitId?: string;
+  getPresence?: (contactId: string) => 'online' | 'typing' | 'recording' | 'offline';
 }
 
 const CHANNEL_OPTIONS: { id: ChannelType | 'all'; label: string }[] = [
@@ -26,6 +27,7 @@ export function ConversationList({
   selectedId,
   onSelect,
   businessUnitId,
+  getPresence,
 }: ConversationListProps) {
   const [statusFilter, setStatusFilter] = useState<ConversationStatus | 'all'>('open');
   const [searchQuery, setSearchQuery] = useState('');
@@ -234,6 +236,7 @@ export function ConversationList({
               conversation={conversation}
               isSelected={conversation.id === selectedId}
               onClick={() => onSelect(conversation.id)}
+              presenceStatus={conversation.contactId && getPresence ? getPresence(conversation.contactId) : undefined}
             />
           ))
         )}
