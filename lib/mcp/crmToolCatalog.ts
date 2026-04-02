@@ -198,6 +198,56 @@ export const CRM_TOOL_CATALOG = {
     description:
       'Writes data. Reorders stages for a board (ordered list of stage IDs) within the authenticated organization.',
   },
+  // ── Messaging ────────────────────────────────────────────────────────────
+
+  listChannels: {
+    name: 'crm.channels.list',
+    title: 'List channels',
+    description:
+      'Read-only. Lists messaging channels (WhatsApp, Instagram, Email, etc.) for the authenticated organization. Credentials are never returned.',
+  },
+  listConversations: {
+    name: 'crm.conversations.list',
+    title: 'List conversations',
+    description:
+      'Read-only. Lists messaging conversations with optional filters (channelId, contactId, status). Includes contact name via join. Scoped to the authenticated organization.',
+  },
+  getConversation: {
+    name: 'crm.conversations.get',
+    title: 'Get conversation',
+    description:
+      'Read-only. Returns a single conversation with its most recent messages, contact, and channel info. Scoped to the authenticated organization.',
+  },
+  sendMessage: {
+    name: 'crm.messages.send',
+    title: 'Send message',
+    description:
+      'Writes data. Queues a text message for sending in an existing conversation. The message is inserted as "pending" and dispatched by the messaging worker. Scoped to the authenticated organization.',
+  },
+  searchMessages: {
+    name: 'crm.messages.search',
+    title: 'Search messages',
+    description:
+      'Read-only. Full-text search over message content within the authenticated organization. Joins through conversations to enforce org scoping.',
+  },
+  retryMessage: {
+    name: 'crm.messages.retry',
+    title: 'Retry failed message',
+    description:
+      'Writes data. Resets a failed message back to "pending" status so it will be retried by the messaging worker. Scoped to the authenticated organization.',
+  },
+  listTemplates: {
+    name: 'crm.templates.list',
+    title: 'List message templates',
+    description:
+      'Read-only. Lists HSM (WhatsApp) message templates, optionally filtered by channel. Scoped to the authenticated organization via channel ownership.',
+  },
+  syncTemplates: {
+    name: 'crm.templates.sync',
+    title: 'Sync message templates',
+    description:
+      'Initiates a template sync with the provider (Meta). Requires Meta API credentials — must be done via the web UI.',
+  },
 } as const satisfies Record<string, CrmToolCatalogEntry>;
 
 export type CrmInternalToolKey = keyof typeof CRM_TOOL_CATALOG;

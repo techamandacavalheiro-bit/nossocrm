@@ -2,6 +2,7 @@ import { createMcpHandler, withMcpAuth } from 'mcp-handler';
 import { authPublicApi } from '@/lib/public-api/auth';
 import { createStaticAdminClient } from '@/lib/supabase/staticAdminClient';
 import { registerExistingCrmTools } from '@/lib/mcp/registerTools';
+import { registerMessagingTools } from '@/lib/mcp/tools/messaging';
 import { mcpContextStorage } from '@/lib/mcp/context';
 
 export const runtime = 'nodejs';
@@ -40,6 +41,7 @@ function extractBearerToken(request: Request): string {
 const mcpHandler = createMcpHandler(
   (server) => {
     registerExistingCrmTools(server);
+    registerMessagingTools(server);
   },
   undefined,
   {
