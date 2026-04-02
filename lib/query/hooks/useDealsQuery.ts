@@ -35,8 +35,9 @@ export interface DealsFilters {
  * Hook to fetch all deals with optional filters
  * Waits for auth to be ready before fetching to ensure RLS works correctly
  */
-export const useDeals = (filters?: DealsFilters) => {
+export const useDeals = (filters?: DealsFilters, options?: { enabled?: boolean }) => {
   const { user, loading: authLoading } = useAuth();
+  const externalEnabled = options?.enabled ?? true;
 
   return useQuery({
     queryKey: filters
@@ -66,7 +67,7 @@ export const useDeals = (filters?: DealsFilters) => {
       return deals;
     },
     staleTime: 2 * 60 * 1000, // 2 minutes
-    enabled: !authLoading && !!user, // Only fetch when auth is ready
+    enabled: !authLoading && !!user && externalEnabled,
   });
 };
 

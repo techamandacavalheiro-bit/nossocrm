@@ -14,6 +14,7 @@ import { useAuth } from '../AuthContext';
 import { useToast } from '../ToastContext';
 import { queryKeys } from '@/lib/query';
 import { useBoards as useTanStackBoards } from '@/lib/query/hooks/useBoardsQuery';
+import { useRouteNeeds } from '@/lib/hooks/useRouteNeeds';
 import { isValidUUID } from '@/lib/supabase/utils';
 
 interface BoardsContextType {
@@ -54,15 +55,16 @@ export const BoardsProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const { profile } = useAuth();
   const queryClient = useQueryClient();
   const { addToast } = useToast();
+  const routeNeeds = useRouteNeeds();
 
   // ============================================
-  // TanStack Query como fonte única de verdade
+  // TanStack Query — lazy: só carrega se a rota precisa
   // ============================================
   const {
     data: boards = [],
     isLoading: loading,
     error: queryError,
-  } = useTanStackBoards();
+  } = useTanStackBoards({ enabled: routeNeeds('boards') });
 
   // Converte erro do TanStack Query para string
   const error = queryError ? (queryError as Error).message : null;

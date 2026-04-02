@@ -14,6 +14,7 @@ import {
   useContacts as useTanStackContacts,
   useCompanies as useTanStackCompanies,
 } from '@/lib/query/hooks/useContactsQuery';
+import { useRouteNeeds } from '@/lib/hooks/useRouteNeeds';
 
 interface ContactsContextType {
   // Contacts
@@ -55,21 +56,22 @@ const ContactsContext = createContext<ContactsContextType | undefined>(undefined
 export const ContactsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { profile } = useAuth();
   const queryClient = useQueryClient();
+  const routeNeeds = useRouteNeeds();
 
   // ============================================
-  // TanStack Query como fonte única de verdade
+  // TanStack Query — lazy: só carrega se a rota precisa
   // ============================================
   const {
     data: contacts = [],
     isLoading: contactsLoading,
     error: contactsQueryError
-  } = useTanStackContacts();
+  } = useTanStackContacts(undefined, { enabled: routeNeeds('contacts') });
 
   const {
     data: companies = [],
     isLoading: companiesLoading,
     error: companiesQueryError
-  } = useTanStackCompanies();
+  } = useTanStackCompanies({ enabled: routeNeeds('companies') });
 
   // Converte erros do TanStack Query para string
   const contactsError = contactsQueryError ? (contactsQueryError as Error).message : null;

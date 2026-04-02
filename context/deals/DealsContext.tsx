@@ -11,6 +11,7 @@ import { dealsService } from '@/lib/supabase';
 import { useAuth } from '../AuthContext';
 import { queryKeys } from '@/lib/query';
 import { useDeals as useTanStackDealsQuery, useCreateDeal, useUpdateDeal, useDeleteDeal } from '@/lib/query/hooks/useDealsQuery';
+import { useRouteNeeds } from '@/lib/hooks/useRouteNeeds';
 
 interface DealsContextType {
   // Raw data (agora vem direto do TanStack Query)
@@ -43,18 +44,20 @@ const DealsContext = createContext<DealsContextType | undefined>(undefined);
 export const DealsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { profile } = useAuth();
   const queryClient = useQueryClient();
+  const routeNeeds = useRouteNeeds();
   const createDealMutation = useCreateDeal();
   const updateDealMutation = useUpdateDeal();
   const deleteDealMutation = useDeleteDeal();
 
   // ============================================
   // TanStack Query como fonte única de verdade
+  // Lazy: só carrega deals se a rota atual precisa
   // ============================================
   const {
     data: rawDeals = [],
     isLoading: loading,
     error: queryError,
-  } = useTanStackDealsQuery();
+  } = useTanStackDealsQuery(undefined, { enabled: routeNeeds('deals') });
 
   // Converte erro do TanStack Query para string
   const error = queryError ? (queryError as Error).message : null;

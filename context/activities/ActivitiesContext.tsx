@@ -11,6 +11,7 @@ import { activitiesService } from '@/lib/supabase';
 import { useAuth } from '../AuthContext';
 import { queryKeys } from '@/lib/query';
 import { useActivities as useTanStackActivities } from '@/lib/query/hooks/useActivitiesQuery';
+import { useRouteNeeds } from '@/lib/hooks/useRouteNeeds';
 
 interface ActivitiesContextType {
   activities: Activity[];
@@ -34,15 +35,16 @@ const ActivitiesContext = createContext<ActivitiesContextType | undefined>(undef
 export const ActivitiesProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { profile } = useAuth();
   const queryClient = useQueryClient();
+  const routeNeeds = useRouteNeeds();
 
   // ============================================
-  // TanStack Query como fonte única de verdade
+  // TanStack Query — lazy: só carrega se a rota precisa
   // ============================================
   const {
     data: activities = [],
     isLoading: loading,
     error: queryError,
-  } = useTanStackActivities();
+  } = useTanStackActivities(undefined, { enabled: routeNeeds('activities') });
 
   // Converte erro do TanStack Query para string
   const error = queryError ? (queryError as Error).message : null;
