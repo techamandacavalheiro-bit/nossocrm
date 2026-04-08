@@ -92,5 +92,6 @@ test/*.md
 .sb-pentest-*.json
 .sb-pentest-*.log
 debug_navigation_failed_*.png
+*.png
 .env*.local
 *.png
