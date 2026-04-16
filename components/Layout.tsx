@@ -282,7 +282,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               N
             </div>
             <span className={`text-xl font-bold font-display tracking-tight text-slate-900 dark:text-white whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'}`}>
-              NossoCRM
+              Cavalheiro Experience
             </span>
           </div>
 

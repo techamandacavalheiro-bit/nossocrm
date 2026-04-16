@@ -1,7 +1,7 @@
 # Lightfield CRM - Análise Completa
 
 > **Data da Pesquisa**: 2026-02-07
-> **Propósito**: Benchmark para evolução do NossoCRM
+> **Propósito**: Benchmark para evolução do Cavalheiro Experience
 > **Fontes**: lightfield.app, support.lightfield.app, Contrary Research, VentureBeat
 
 ---
@@ -296,6 +296,6 @@ Ambos incluem: Call recording, email sync, agent queries ilimitadas, workflow bu
 
 ---
 
-## 19. Aplicação no NossoCRM
+## 19. Aplicação no Cavalheiro Experience
 
 Ver documento separado: `lightfield-ideas-for-nossocrm.md`

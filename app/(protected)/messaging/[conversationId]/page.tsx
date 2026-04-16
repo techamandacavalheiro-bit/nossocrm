@@ -10,7 +10,7 @@ interface ConversationPageProps {
 }
 
 export const metadata: Metadata = {
-  title: 'Conversa | NossoCRM',
+  title: 'Conversa | Cavalheiro Experience',
   description: 'Visualizar conversa',
 };
 

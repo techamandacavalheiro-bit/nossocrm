@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**NossoCRM** is an intelligent CRM platform with an integrated AI assistant designed for sales teams. It provides visual pipeline management, contact organization, and AI-powered tools for analysis, script generation, and opportunity management. Built on modern full-stack technology with emphasis on real-time collaboration and multi-tenant data isolation.
+**Cavalheiro Experience** is an intelligent CRM platform with an integrated AI assistant designed for sales teams. It provides visual pipeline management, contact organization, and AI-powered tools for analysis, script generation, and opportunity management. Built on modern full-stack technology with emphasis on real-time collaboration and multi-tenant data isolation.
 
 ## Development Commands
 

@@ -1,4 +1,4 @@
-# Copilot instructions — NossoCRM (crmia-next)
+# Copilot instructions — Cavalheiro Experience (crmia-next)
 
 ## Visão geral (arquitetura real)
 - **Next.js 16 (App Router)**: rotas e layouts em `app/` (ex.: `app/(protected)/*`, `app/api/*`).

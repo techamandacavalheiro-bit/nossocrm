@@ -11,14 +11,14 @@ prd_reference: /Users/thaleslaray/.claude/plans/elegant-knitting-star.md
 ## Overview
 
 ### Problema
-Vendedores do NossoCRM atualmente precisam alternar entre o CRM e múltiplos aplicativos externos (WhatsApp, Instagram) para se comunicar com clientes. Isso resulta em:
+Vendedores do Cavalheiro Experience atualmente precisam alternar entre o CRM e múltiplos aplicativos externos (WhatsApp, Instagram) para se comunicar com clientes. Isso resulta em:
 - Perda de contexto e histórico de conversas
 - Tempo desperdiçado alternando entre aplicativos
 - Dificuldade em manter registro centralizado de interações
 - Impossibilidade de vincular conversas a negociações (deals) existentes
 
 ### Solução
-Criar um **Inbox Unificado** dentro do NossoCRM onde vendedores podem:
+Criar um **Inbox Unificado** dentro do Cavalheiro Experience onde vendedores podem:
 - Visualizar todas as conversas de todos os canais em um único lugar
 - Enviar e receber mensagens diretamente do CRM
 - Ver automaticamente qual contato/deal está associado à conversa
@@ -514,7 +514,7 @@ Criar/Editar Snippet
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  [Logo] NossoCRM    [🔔 3]    [Avatar ▼]                               │
+│  [Logo] Cavalheiro Experience    [🔔 3]    [Avatar ▼]                               │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ ┌────────────────┐ ┌───────────────────────────┐ ┌───────────────────┐ │
 │ │  COLUNA 1      │ │  COLUNA 2                 │ │  COLUNA 3         │ │
@@ -913,7 +913,7 @@ Business Unit
 
 #### Implementação com OpenAI Assistants API / Vercel AI SDK
 
-O NossoCRM já usa Vercel AI SDK. A solução usa o parâmetro `additional_instructions` que permite **instruções dinâmicas por execução** mantendo o histórico:
+O Cavalheiro Experience já usa Vercel AI SDK. A solução usa o parâmetro `additional_instructions` que permite **instruções dinâmicas por execução** mantendo o histórico:
 
 ```typescript
 // lib/messaging/ai/stage-aware-agent.ts
@@ -1001,7 +1001,7 @@ CREATE TABLE stage_ai_config (
 
 #### Referências
 - [OpenAI Assistants API - Runs](https://platform.openai.com/docs/api-reference/runs) - Suporte a `additional_instructions`
-- [Vercel AI SDK](https://sdk.vercel.ai/docs) - Integração existente no NossoCRM
+- [Vercel AI SDK](https://sdk.vercel.ai/docs) - Integração existente no Cavalheiro Experience
 - [Kommo Salesbot](https://www.kommo.com/support/crm/ai-power-up/) - Benchmark de ativação por stage
 
 ---
@@ -1023,7 +1023,7 @@ Análise comparativa com principais players do mercado para validar alinhamento 
 
 ### Matriz de Comparação
 
-| Feature | HubSpot | Intercom | Kommo | Freshworks | Chatwoot | **NossoCRM** |
+| Feature | HubSpot | Intercom | Kommo | Freshworks | Chatwoot | **Cavalheiro Experience** |
 |---------|---------|----------|-------|------------|----------|--------------|
 | Unified Inbox | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | WhatsApp nativo | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -1072,7 +1072,7 @@ Gaps identificados estão planejados para fases futuras.
 
 ## Dependencies
 
-### Dependências Internas (NossoCRM)
+### Dependências Internas (Cavalheiro Experience)
 1. **Contatos**: Sistema de contatos existente para vinculação
 2. **Deals**: Sistema de deals existente para associação
 3. **Boards**: Sistema de boards existente para vincular a Business Units
@@ -1164,7 +1164,7 @@ Gaps identificados estão planejados para fases futuras.
 
 ## Messaging Design Tokens (Extensão do Design System)
 
-O NossoCRM já possui um Design System maduro (globals.css). Esta seção define tokens **específicos para Messaging** que estendem o sistema existente.
+O Cavalheiro Experience já possui um Design System maduro (globals.css). Esta seção define tokens **específicos para Messaging** que estendem o sistema existente.
 
 ### 1. Channel Colors
 

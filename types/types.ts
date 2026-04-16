@@ -1,7 +1,7 @@
 /**
  * @fileoverview Definições de Tipos do CRM
  * 
- * Arquivo central de tipos TypeScript para o sistema NossoCRM.
+ * Arquivo central de tipos TypeScript para o sistema Cavalheiro Experience.
  * Contém interfaces para todas as entidades do domínio.
  * 
  * @module types

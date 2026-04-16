@@ -1,8 +1,8 @@
-# NossoCRM MCP Server — 100% Coverage
+# Cavalheiro Experience MCP Server — 100% Coverage
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Migrate the MCP server to `mcp-handler` (Vercel) and expand from 29 tools to full CRM coverage (~65 tools), enabling AI agents to operate NossoCRM as first-class users.
+**Goal:** Migrate the MCP server to `mcp-handler` (Vercel) and expand from 29 tools to full CRM coverage (~65 tools), enabling AI agents to operate Cavalheiro Experience as first-class users.
 
 **Architecture:** Replace the manual JSON-RPC handler with `mcp-handler` for protocol compliance (Streamable HTTP, SSE, sessions). Keep direct Supabase access via `createStaticAdminClient()` for all tools. Existing tools from `lib/ai/tools.ts` are adapted via a registration bridge; new tools follow the same DB-direct pattern.
 
@@ -1345,7 +1345,7 @@ Create or update `.mcp.json` in project root:
 }
 ```
 
-**NOTE:** The API key should be created via the NossoCRM admin UI. Do NOT commit the actual key — add `.mcp.json` to `.gitignore` or use environment variable interpolation if supported.
+**NOTE:** The API key should be created via the Cavalheiro Experience admin UI. Do NOT commit the actual key — add `.mcp.json` to `.gitignore` or use environment variable interpolation if supported.
 
 - [ ] **Step 2: Add to .gitignore if not already**
 

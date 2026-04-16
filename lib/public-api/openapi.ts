@@ -1,4 +1,4 @@
-// OpenAPI 3.1.2 "source of truth" for NossoCRM Public API (Integrations).
+// OpenAPI 3.1.2 "source of truth" for Cavalheiro Experience Public API (Integrations).
 //
 // NOTE:
 // - Keep this file updated together with route implementations.
@@ -10,10 +10,10 @@ export function getPublicApiOpenApiDocument(): OpenApiDocument {
   return {
     openapi: '3.1.2',
     info: {
-      title: 'NossoCRM Public API',
+      title: 'Cavalheiro Experience Public API',
       version: 'v1',
       description:
-        'API pública do NossoCRM para integrações (n8n/Make). Produto em primeiro lugar: copiar → colar → testar.',
+        'API pública do Cavalheiro Experience para integrações (n8n/Make). Produto em primeiro lugar: copiar → colar → testar.',
     },
     servers: [{ url: '/api/public/v1' }],
     tags: [

@@ -1,4 +1,4 @@
-# Smoke Test E2E Completo — NossoCRM
+# Smoke Test E2E Completo — Cavalheiro Experience
 
 > Teste automatizado via `agent-browser` cobrindo CRUD completo em todas as features.
 > Cada seção cria, lê, edita, deleta, e verifica. Screenshot antes/depois de cada operação crítica.

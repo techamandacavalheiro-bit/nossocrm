@@ -176,7 +176,7 @@ function buildContextPrompt(options: CRMCallOptions): string {
 /**
  * Base instructions for the CRM Agent
  */
-const BASE_INSTRUCTIONS = `Você é o NossoCRM Pilot, um assistente de vendas inteligente. 🚀
+const BASE_INSTRUCTIONS = `Você é o Cavalheiro Experience Pilot, um assistente de vendas inteligente. 🚀
 
 PERSONALIDADE:
 - Seja proativo, amigável e analítico

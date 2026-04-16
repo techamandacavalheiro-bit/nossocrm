@@ -1,8 +1,8 @@
-# Ideias do Lightfield para o NossoCRM
+# Ideias do Lightfield para o Cavalheiro Experience
 
 > **Data**: 2026-02-07
 > **Baseado em**: Análise completa do Lightfield CRM
-> **Objetivo**: Identificar features e padrões que seriam incríveis no NossoCRM
+> **Objetivo**: Identificar features e padrões que seriam incríveis no Cavalheiro Experience
 
 ---
 
@@ -11,7 +11,7 @@
 O Lightfield é um CRM AI-native focado em **captura automática** e **contexto completo**. Muitos padrões já implementamos (HITL, Agentic Workflows, Secure Tools), mas há oportunidades significativas de evolução.
 
 ### Legenda
-- ✅ **Já temos** - Implementado no NossoCRM
+- ✅ **Já temos** - Implementado no Cavalheiro Experience
 - 🔜 **Fácil de implementar** - 1-3 dias
 - 🚀 **Médio esforço** - 1-2 semanas
 - 🌟 **Game changer** - Alto impacto, vale o investimento
@@ -428,7 +428,7 @@ const reactivationMessage = await generateReactivation(deal, lastConversation);
 ## 11. O QUE NÃO COPIAR
 
 ### Complexidade desnecessária
-- Lightfield tem schema totalmente flexível → NossoCRM tem boards/stages que funcionam bem
+- Lightfield tem schema totalmente flexível → Cavalheiro Experience tem boards/stages que funcionam bem
 - Não precisamos de "world model" abstrato → nosso modelo é prático para BR
 
 ### Features enterprise demais
@@ -438,7 +438,7 @@ const reactivationMessage = await generateReactivation(deal, lastConversation);
 
 ### Foco diferente
 - Lightfield é horizontal (qualquer empresa)
-- NossoCRM pode focar em verticais (ex: imobiliárias, clínicas, agências)
+- Cavalheiro Experience pode focar em verticais (ex: imobiliárias, clínicas, agências)
 
 ---
 

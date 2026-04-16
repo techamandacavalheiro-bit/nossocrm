@@ -1,4 +1,4 @@
-# AGENTS.md — NossoCRM
+# AGENTS.md — Cavalheiro Experience
 
 ## Commands
 - **Dev**: `npm run dev`

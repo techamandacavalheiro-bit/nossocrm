@@ -1,7 +1,7 @@
 /**
  * @fileoverview AI Agent Module
  *
- * Agente autônomo de vendas para o NossoCRM.
+ * Agente autônomo de vendas para o Cavalheiro Experience.
  * Processa mensagens automaticamente e move leads pelo funil.
  *
  * @module lib/ai/agent

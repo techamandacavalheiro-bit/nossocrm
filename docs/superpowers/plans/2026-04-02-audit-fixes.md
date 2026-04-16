@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Corrigir todos os problemas identificados na auditoria de qualidade do NossoCRM em três domínios: TanStack Query, Supabase, e Next.js/React.
+**Goal:** Corrigir todos os problemas identificados na auditoria de qualidade do Cavalheiro Experience em três domínios: TanStack Query, Supabase, e Next.js/React.
 
 **Architecture:** Três domínios independentes executados sequencialmente. Cada domínio tem suas próprias tasks. Sem mudanças de feature — só correções de padrão e qualidade.
 
@@ -317,7 +317,7 @@ grep -rL "'use client'" app/\(protected\)/*/page.tsx app/\(protected\)/page.tsx 
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Dashboard | NossoCRM',
+  title: 'Dashboard | Cavalheiro Experience',
 };
 ```
 
@@ -332,26 +332,26 @@ export const metadata: Metadata = {
   Para cada page Server Component, adicionar no topo (após imports existentes):
   ```ts
   import type { Metadata } from 'next';
-  export const metadata: Metadata = { title: '<Nome> | NossoCRM' };
+  export const metadata: Metadata = { title: '<Nome> | Cavalheiro Experience' };
   ```
 
   Títulos por page:
   - `/` (redirect page) → não precisa
-  - `/dashboard` → `Dashboard | NossoCRM`
-  - `/boards` → `Funis | NossoCRM`
-  - `/contacts` → `Contatos | NossoCRM`
-  - `/activities` → `Atividades | NossoCRM`
-  - `/inbox` → `Inbox | NossoCRM`
-  - `/decisions` → `Decisões | NossoCRM`
-  - `/messaging` → `Mensagens | NossoCRM`
-  - `/reports` → `Relatórios | NossoCRM`
-  - `/pipeline` → `Pipeline | NossoCRM`
-  - `/profile` → `Perfil | NossoCRM`
-  - `/settings` → `Configurações | NossoCRM`
-  - `/settings/ai` → `IA | Configurações | NossoCRM`
-  - `/settings/integracoes` → `Integrações | NossoCRM`
-  - `/settings/products` → `Produtos | NossoCRM`
-  - `/ai` → `AI Hub | NossoCRM`
+  - `/dashboard` → `Dashboard | Cavalheiro Experience`
+  - `/boards` → `Funis | Cavalheiro Experience`
+  - `/contacts` → `Contatos | Cavalheiro Experience`
+  - `/activities` → `Atividades | Cavalheiro Experience`
+  - `/inbox` → `Inbox | Cavalheiro Experience`
+  - `/decisions` → `Decisões | Cavalheiro Experience`
+  - `/messaging` → `Mensagens | Cavalheiro Experience`
+  - `/reports` → `Relatórios | Cavalheiro Experience`
+  - `/pipeline` → `Pipeline | Cavalheiro Experience`
+  - `/profile` → `Perfil | Cavalheiro Experience`
+  - `/settings` → `Configurações | Cavalheiro Experience`
+  - `/settings/ai` → `IA | Configurações | Cavalheiro Experience`
+  - `/settings/integracoes` → `Integrações | Cavalheiro Experience`
+  - `/settings/products` → `Produtos | Cavalheiro Experience`
+  - `/ai` → `AI Hub | Cavalheiro Experience`
   - `/deals/[dealId]/cockpit` → usar `generateMetadata`
 
 - [ ] **Step 3: Pages com `'use client'` — pular ou criar wrapper**

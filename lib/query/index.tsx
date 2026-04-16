@@ -1,5 +1,5 @@
 /**
- * @fileoverview Configuração do TanStack Query para o NossoCRM.
+ * @fileoverview Configuração do TanStack Query para o Cavalheiro Experience.
  * 
  * Este módulo centraliza toda a configuração de gerenciamento de estado do servidor:
  * - Cliente e provider do TanStack Query
@@ -127,7 +127,7 @@ const handleMutationError = (error: unknown, _variables: unknown, _context: unkn
  */
 
 /**
- * Cliente TanStack Query configurado para o NossoCRM.
+ * Cliente TanStack Query configurado para o Cavalheiro Experience.
  * 
  * Configurações:
  * - Stale time: 5 minutos

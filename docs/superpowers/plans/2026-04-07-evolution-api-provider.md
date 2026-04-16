@@ -8,7 +8,7 @@
 
 ## Objetivo
 
-Adicionar Evolution API como terceiro provider de WhatsApp no NossoCRM, seguindo exatamente o padrão já estabelecido por Z-API e Meta Cloud API. O AI agent, HITL, pipeline e todas as demais features funcionam automaticamente — apenas os adaptadores de entrada/saída mudam.
+Adicionar Evolution API como terceiro provider de WhatsApp no Cavalheiro Experience, seguindo exatamente o padrão já estabelecido por Z-API e Meta Cloud API. O AI agent, HITL, pipeline e todas as demais features funcionam automaticamente — apenas os adaptadores de entrada/saída mudam.
 
 ## Por que Evolution API
 

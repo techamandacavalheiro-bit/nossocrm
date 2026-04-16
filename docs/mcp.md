@@ -1,8 +1,8 @@
-# NossoCRM MCP Server
+# Cavalheiro Experience MCP Server
 
 ## Overview
 
-NossoCRM exposes a **remote MCP (Model Context Protocol) server** that gives AI assistants and developer tools direct, authenticated access to your CRM data. Clients can search deals, manage contacts, send messages, review AI-suggested stage advances (HITL), and more — all via standardized MCP tool calls.
+Cavalheiro Experience exposes a **remote MCP (Model Context Protocol) server** that gives AI assistants and developer tools direct, authenticated access to your CRM data. Clients can search deals, manage contacts, send messages, review AI-suggested stage advances (HITL), and more — all via standardized MCP tool calls.
 
 The server is built on [`mcp-handler`](https://github.com/vercel/mcp-handler) and runs as a Next.js route at `/api/[transport]`, supporting both the Streamable HTTP and SSE transports defined in MCP 2025-03-26.
 
@@ -21,7 +21,7 @@ Both transports share the same tool registry and authentication logic.
 
 ## Authentication
 
-Every request must carry a valid NossoCRM API key. Two header formats are accepted:
+Every request must carry a valid Cavalheiro Experience API key. Two header formats are accepted:
 
 ```
 Authorization: Bearer <API_KEY>
@@ -30,7 +30,7 @@ Authorization: Bearer <API_KEY>
 X-Api-Key: <API_KEY>
 ```
 
-API keys are created in **NossoCRM → Settings → API Keys**. Each key is scoped to a single organization; all tool calls are automatically filtered to that organization's data.
+API keys are created in **Cavalheiro Experience → Settings → API Keys**. Each key is scoped to a single organization; all tool calls are automatically filtered to that organization's data.
 
 Unauthenticated requests receive an MCP-level auth error and no tool output.
 
