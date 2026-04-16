@@ -210,6 +210,45 @@ const PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
       '5. Cole os dados nos campos abaixo',
     ],
   },
+  'whatsapp:uazapi': {
+    name: 'UazAPI',
+    description: 'Conexão não-oficial via WhatsApp Web usando UazAPI self-hosted ou cloud.',
+    official: false,
+    fields: [
+      {
+        key: 'serverUrl',
+        label: 'URL do Servidor',
+        type: 'text',
+        placeholder: 'Ex: https://api.uazapi.com',
+        required: true,
+        helpText: 'URL base da sua instância UazAPI.',
+      },
+      {
+        key: 'token',
+        label: 'Token da Instância',
+        type: 'password',
+        placeholder: 'Seu token de instância',
+        required: true,
+        helpText: 'Token de autenticação da instância UazAPI.',
+      },
+      {
+        key: 'webhookSecret',
+        label: 'Webhook Secret (opcional)',
+        type: 'password',
+        placeholder: 'Secret para validar webhooks',
+        required: false,
+        helpText: 'Se configurado, valida a assinatura dos webhooks recebidos.',
+      },
+    ],
+    setupUrl: 'https://doc.uazapi.com/',
+    setupInstructions: [
+      '1. Acesse seu servidor UazAPI e crie uma instância',
+      '2. Copie a URL do servidor e o Token da instância',
+      '3. Após salvar, escaneie o QR code para conectar o WhatsApp',
+      '4. Configure o webhook apontando para a URL exibida',
+    ],
+  },
+
   'instagram:meta': {
     name: 'Instagram API',
     description: 'API oficial da Meta para Instagram Direct Messages.',
@@ -888,6 +927,7 @@ function getWebhookUrl(provider: string, channelId: string): string {
   const functionMap: Record<string, string> = {
     'z-api': 'messaging-webhook-zapi',
     'evolution': 'messaging-webhook-evolution',
+    'uazapi': 'messaging-webhook-uazapi',
     'meta-cloud': 'messaging-webhook-meta',
     'meta': 'messaging-webhook-meta',
     'resend': 'messaging-webhook-resend',

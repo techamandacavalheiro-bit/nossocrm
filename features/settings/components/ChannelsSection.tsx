@@ -112,6 +112,7 @@ const WEBHOOK_FUNCTION_MAP: Record<string, string> = {
   'meta-cloud': 'messaging-webhook-meta',
   'meta': 'messaging-webhook-meta',
   'resend': 'messaging-webhook-resend',
+  'uazapi': 'messaging-webhook-uazapi',
 };
 
 interface WebhookField {

@@ -141,6 +141,36 @@ const PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
     ],
     setupUrl: 'https://developers.facebook.com/docs/whatsapp/cloud-api',
   },
+  'whatsapp:uazapi': {
+    name: 'UazAPI',
+    description: 'Conexão não-oficial via WhatsApp Web usando UazAPI.',
+    official: false,
+    fields: [
+      {
+        key: 'serverUrl',
+        label: 'URL do Servidor',
+        type: 'text',
+        placeholder: 'Ex: https://api.uazapi.com',
+        required: true,
+      },
+      {
+        key: 'token',
+        label: 'Token da Instância',
+        type: 'password',
+        placeholder: 'Seu token de instância',
+        required: true,
+      },
+      {
+        key: 'webhookSecret',
+        label: 'Webhook Secret',
+        type: 'password',
+        placeholder: 'Secret para validar webhooks',
+        required: false,
+      },
+    ],
+    setupUrl: 'https://doc.uazapi.com/',
+  },
+
   'instagram:meta': {
     name: 'Instagram API',
     description: 'API oficial da Meta para Instagram Direct.',
