@@ -10,7 +10,7 @@
 export { BaseChannelProvider } from './base.provider';
 
 // WhatsApp providers
-export { ZApiWhatsAppProvider, MetaCloudWhatsAppProvider, EvolutionWhatsAppProvider } from './whatsapp';
+export { ZApiWhatsAppProvider, MetaCloudWhatsAppProvider, EvolutionWhatsAppProvider, UazApiWhatsAppProvider } from './whatsapp';
 export type {
   ZApiCredentials,
   ZApiWebhookPayload,
@@ -18,7 +18,8 @@ export type {
   MetaCloudWebhookPayload,
   EvolutionCredentials,
   EvolutionWebhookPayload,
-} from './whatsapp';
+  UazApiCredentials,
+  UazApiWebhookPayload,} from './whatsapp';
 
 // Instagram providers
 export { MetaInstagramProvider } from './instagram';
@@ -33,7 +34,7 @@ export type { ResendCredentials, ResendWebhookPayload } from './email';
 // =============================================================================
 
 import { registerProvider } from '../channel-factory';
-import { ZApiWhatsAppProvider, MetaCloudWhatsAppProvider, EvolutionWhatsAppProvider } from './whatsapp';
+import { ZApiWhatsAppProvider, MetaCloudWhatsAppProvider, EvolutionWhatsAppProvider, UazApiWhatsAppProvider } from './whatsapp';
 import { MetaInstagramProvider } from './instagram';
 import { ResendEmailProvider } from './email';
 
@@ -260,4 +261,40 @@ registerProvider({
     },
   ],
   features: ['media', 'read_receipts', 'qr_code'],
+});
+
+// Register UazAPI provider
+registerProvider({
+  channelType: 'whatsapp',
+  providerName: 'uazapi',
+  constructor: UazApiWhatsAppProvider,
+  displayName: 'UazAPI',
+  description: 'WhatsApp via UazAPI (self-hosted ou cloud, com CRM e chatbot integrado)',
+  configFields: [
+    {
+      key: 'serverUrl',
+      label: 'URL do Servidor',
+      type: 'text',
+      required: true,
+      placeholder: 'https://api.uazapi.com',
+      helpText: 'URL do servidor UazAPI (sem barra no final)',
+    },
+    {
+      key: 'token',
+      label: 'Token da Instância',
+      type: 'password',
+      required: true,
+      placeholder: 'seu-token',
+      helpText: 'Token da instância fornecido pelo UazAPI',
+    },
+    {
+      key: 'webhookSecret',
+      label: 'Webhook Secret (opcional)',
+      type: 'password',
+      required: false,
+      placeholder: 'secret-para-validar-webhooks',
+      helpText: 'Se configurado, valida os webhooks recebidos. Recomendado para produção.',
+    },
+  ],
+  features: ['media', 'qr_code'],
 });
