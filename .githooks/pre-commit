@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# NossoCRM pre-commit precheck:
+# Cavalheiro Experience pre-commit precheck:
 # - lint (zero warnings)
 # - typecheck
 # - tests (single run)

@@ -333,7 +333,7 @@ BEGIN
       'pt_BR',
       'utility',
       '[
-        {"type": "HEADER", "format": "TEXT", "text": "Bem-vindo(a) à NossoCRM!"},
+        {"type": "HEADER", "format": "TEXT", "text": "Bem-vindo(a) à Cavalheiro Experience!"},
         {"type": "BODY", "text": "Olá {{1}}, obrigado por entrar em contato! 🎉\n\nEstamos aqui para ajudar você. Como podemos auxiliar hoje?"},
         {"type": "FOOTER", "text": "Responda a qualquer momento"}
       ]'::jsonb,
@@ -362,7 +362,7 @@ BEGIN
       'utility',
       '[
         {"type": "BODY", "text": "✅ Pagamento confirmado!\n\nOlá {{1}}, recebemos seu pagamento no valor de R$ {{2}}.\n\nSeu acesso será liberado em instantes. Obrigado pela confiança!"},
-        {"type": "FOOTER", "text": "NossoCRM - Seu CRM favorito"}
+        {"type": "FOOTER", "text": "Cavalheiro Experience - Seu CRM favorito"}
       ]'::jsonb,
       'approved'
     ),

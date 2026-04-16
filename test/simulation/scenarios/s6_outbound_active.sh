@@ -8,7 +8,7 @@
 # diferente de S1-S5 que começam com inbound.
 # =============================================================================
 
-S6_MSG_TEXT="Olá! Somos da equipe NossoCRM. Vi que você se interessou pelo nosso produto. Posso tirar algumas dúvidas? [SIM-S6-${TEST_RUN_ID}]"
+S6_MSG_TEXT="Olá! Somos da equipe Cavalheiro Experience. Vi que você se interessou pelo nosso produto. Posso tirar algumas dúvidas? [SIM-S6-${TEST_RUN_ID}]"
 S6_REPLY_TEXT="Oi! Claro, pode falar. Estou interessada sim. [SIM-S6-REPLY-${TEST_RUN_ID}]"
 
 echo ""

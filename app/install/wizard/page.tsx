@@ -81,7 +81,7 @@ function generateStrongPassword(length = 20) {
 }
 
 function suggestProjectName(existingNames: string[]) {
-  const base = 'nossocrm';
+  const base = 'cavalheiro';
   const lower = new Set(existingNames.map((n) => (n || '').toLowerCase().trim()).filter(Boolean));
   if (!lower.has(base)) return base;
   for (let i = 2; i < 50; i++) {
@@ -652,7 +652,7 @@ export default function InstallWizardPage() {
 
         lastErr = String(data?.error || data?.details?.message || 'Erro');
 
-        // Nome já existe: tenta automaticamente o próximo (nossocrm -> nossocrmv2 -> ...)
+        // Nome já existe: tenta automaticamente o próximo (cavalheiro -> cavalheirov2 -> ...)
         if (res.status === 409 && String(data?.code || '') === 'PROJECT_EXISTS') {
           const existingName = String(data?.existingProject?.name || '').trim();
           if (existingName) names.add(existingName);

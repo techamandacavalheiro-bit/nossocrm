@@ -1,6 +1,6 @@
 # A string used to distinguish different Supabase projects on the same host. Defaults to the
 # working directory name when running `supabase init`.
-# NossoCRM - CRM multi-tenant SaaS
+# Cavalheiro Experience - CRM multi-tenant SaaS
 project_id = "crmia"
 
 [api]
