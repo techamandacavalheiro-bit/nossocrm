@@ -279,11 +279,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         <div className={`h-16 flex items-center border-b border-[var(--color-border-subtle)] transition-all duration-300 px-5 ${sidebarCollapsed ? 'justify-center px-0' : 'justify-between'}`}>
           <div className={`flex items-center transition-all duration-300 ${sidebarCollapsed ? 'gap-0 justify-center' : 'gap-3'}`}>
             <div className="w-9 h-9 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-primary-500/20 shrink-0" aria-hidden="true">
-              N
+              C
             </div>
-            <span className={`text-xl font-bold font-display tracking-tight text-slate-900 dark:text-white whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'}`}>
-              Cavalheiro Experience
-            </span>
+            <div className={`flex flex-col leading-tight overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'}`}>
+              <span className="text-base font-bold font-display tracking-tight text-slate-900 dark:text-white whitespace-nowrap">Cavalheiro</span>
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap">Experience</span>
+            </div>
           </div>
 
           {/* Header Toggle Button - Only visible when expanded */}
