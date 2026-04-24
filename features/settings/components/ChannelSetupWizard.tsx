@@ -910,6 +910,19 @@ const WEBHOOK_INSTRUCTIONS: Record<string, { label: string; steps: string[]; doc
     ],
     docsUrl: 'https://doc.evolution-api.com/v2/pt/webhooks/webhook',
   },
+  'uazapi': {
+    label: 'UazAPI',
+    steps: [
+      'Normalmente o webhook é registrado automaticamente ao criar o canal',
+      'Caso falhe: acesse seu servidor UazAPI e abra a instância',
+      'Vá em Webhook (ou faça POST em /webhook com seu token)',
+      'Cole a URL abaixo no campo "URL"',
+      'Ative os eventos: messages, messages_update, connection',
+      'Marque "Excluir mensagens enviadas pela API" (excludeMessages: wasSentByApi)',
+      'Salve as configurações',
+    ],
+    docsUrl: 'https://doc.uazapi.com/',
+  },
   'resend': {
     label: 'Resend',
     steps: [
@@ -1195,6 +1208,31 @@ export function ChannelSetupWizard({
       setCreatedChannelId(created.id);
       setStep('complete');
       addToast('Canal criado com sucesso!', 'success');
+
+      // Tenta registrar o webhook automaticamente para providers que suportam.
+      // UazAPI/Evolution expõem endpoint para isso; Z-API/Meta exigem config manual.
+      if (provider === 'uazapi' || provider === 'evolution' || provider === 'z-api') {
+        try {
+          const res = await fetch(`/api/messaging/channels/${created.id}/configure-webhook`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+          });
+          const body = await res.json().catch(() => ({}));
+          if (res.ok && body.success) {
+            addToast('Webhook configurado automaticamente.', 'success');
+          } else {
+            addToast(
+              `Não foi possível configurar o webhook automaticamente: ${body.error || 'erro desconhecido'}. Configure manualmente conforme as instruções.`,
+              'warning'
+            );
+          }
+        } catch (err) {
+          addToast(
+            `Falha ao configurar webhook automaticamente: ${err instanceof Error ? err.message : 'erro de rede'}. Configure manualmente.`,
+            'warning'
+          );
+        }
+      }
     } catch (error) {
       addToast(
         error instanceof Error ? error.message : 'Erro ao criar canal.',
