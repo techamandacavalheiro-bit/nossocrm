@@ -193,15 +193,26 @@ function parseTimestamp(ts: number | undefined): Date {
 }
 
 const MIME_TO_EXT: Record<string, string> = {
+  // Images
   'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
-  'video/mp4': 'mp4', 'video/3gpp': '3gp',
+  'image/bmp': 'bmp', 'image/tiff': 'tiff',
+  // Video
+  'video/mp4': 'mp4', 'video/3gpp': '3gp', 'video/webm': 'webm',
+  'video/quicktime': 'mov', 'video/x-msvideo': 'avi',
+  // Audio
   'audio/aac': 'aac', 'audio/mp4': 'm4a', 'audio/mpeg': 'mp3', 'audio/amr': 'amr',
-  'audio/ogg': 'ogg', 'audio/webm': 'webm',
+  'audio/ogg': 'ogg', 'audio/webm': 'webm', 'audio/wav': 'wav', 'audio/x-wav': 'wav',
+  'audio/flac': 'flac', 'audio/opus': 'opus',
+  // Documents
   'application/pdf': 'pdf', 'application/msword': 'doc',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
   'application/vnd.ms-excel': 'xls',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  'application/zip': 'zip', 'application/x-rar-compressed': 'rar',
   'text/plain': 'txt', 'text/csv': 'csv',
+  'application/octet-stream': 'bin',
 };
 
 /**
@@ -224,33 +235,41 @@ async function downloadAndStoreMedia(
     token: string;
   }
 ): Promise<string | null> {
+  console.log(`[UazAPI:download] START msgId=${externalMessageId} serverUrl=${serverUrl} tokenLen=${token.length}`);
   try {
-    console.log(`[UazAPI] Downloading media for msg: ${externalMessageId}`);
-
     const dlCtrl = new AbortController();
     const dlTimer = setTimeout(() => dlCtrl.abort(), 20_000);
     let fileUrl: string | undefined;
     let mimetype: string | undefined;
     try {
-      const dlRes = await fetch(`${serverUrl}/message/download`, {
+      const dlUrl = `${serverUrl}/message/download`;
+      const dlBody = { id: externalMessageId, return_link: true, generate_mp3: true };
+      console.log(`[UazAPI:download] POST ${dlUrl} body=${JSON.stringify(dlBody)}`);
+
+      const dlRes = await fetch(dlUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', token },
-        body: JSON.stringify({ id: externalMessageId, return_link: true }),
+        body: JSON.stringify(dlBody),
         signal: dlCtrl.signal,
       });
+      console.log(`[UazAPI:download] /message/download status=${dlRes.status}`);
+
       if (!dlRes.ok) {
-        console.warn(`[UazAPI] /message/download returned ${dlRes.status}`);
+        const errText = await dlRes.text();
+        console.warn(`[UazAPI:download] ERROR body=${errText.slice(0, 500)}`);
         return null;
       }
       const dlData = await dlRes.json() as Record<string, unknown>;
+      console.log(`[UazAPI:download] response keys=${Object.keys(dlData).join(',')}`);
       fileUrl = dlData.fileURL as string | undefined;
       mimetype = dlData.mimetype as string | undefined;
+      console.log(`[UazAPI:download] fileURL=${fileUrl?.slice(0, 100)} mimetype=${mimetype}`);
     } finally {
       clearTimeout(dlTimer);
     }
 
     if (!fileUrl?.startsWith('http')) {
-      console.warn(`[UazAPI] No valid fileURL from /message/download: ${fileUrl}`);
+      console.warn(`[UazAPI:download] INVALID fileURL=${fileUrl}`);
       return null;
     }
 
@@ -259,34 +278,38 @@ async function downloadAndStoreMedia(
     let fileBuffer: ArrayBuffer;
     let resolvedMime: string;
     try {
+      console.log(`[UazAPI:download] Fetching bytes from ${fileUrl.slice(0, 80)}`);
       const fileRes = await fetch(fileUrl, { signal: fetchCtrl.signal });
+      console.log(`[UazAPI:download] file fetch status=${fileRes.status} ct=${fileRes.headers.get('content-type')}`);
       if (!fileRes.ok) {
-        console.warn(`[UazAPI] Failed to fetch media bytes: ${fileRes.status}`);
+        console.warn(`[UazAPI:download] File fetch failed: ${fileRes.status}`);
         return null;
       }
       resolvedMime = mimetype || fileRes.headers.get('content-type') || 'application/octet-stream';
       fileBuffer = await fileRes.arrayBuffer();
+      console.log(`[UazAPI:download] Downloaded ${fileBuffer.byteLength} bytes (mime=${resolvedMime})`);
     } finally {
       clearTimeout(fetchTimer);
     }
 
     const ext = MIME_TO_EXT[resolvedMime] || 'bin';
     const storagePath = `${organizationId}/${conversationId}/${externalMessageId}.${ext}`;
+    console.log(`[UazAPI:download] Uploading to messaging-media/${storagePath}`);
 
     const { error: upErr } = await supabase.storage
       .from('messaging-media')
       .upload(storagePath, fileBuffer, { contentType: resolvedMime, upsert: true });
 
     if (upErr) {
-      console.error('[UazAPI] Storage upload error:', upErr.message);
+      console.error(`[UazAPI:download] STORAGE UPLOAD ERROR: ${upErr.message}`, upErr);
       return null;
     }
 
     const { data: urlData } = supabase.storage.from('messaging-media').getPublicUrl(storagePath);
-    console.log(`[UazAPI] Media stored: ${urlData.publicUrl}`);
+    console.log(`[UazAPI:download] SUCCESS publicUrl=${urlData.publicUrl}`);
     return urlData.publicUrl;
   } catch (err) {
-    console.error('[UazAPI] downloadAndStoreMedia exception:', err instanceof Error ? err.message : err);
+    console.error(`[UazAPI:download] EXCEPTION: ${err instanceof Error ? err.message : err}`, err);
     return null;
   }
 }
@@ -495,6 +518,13 @@ async function handleMessage(
     console.log("[UazAPI] Native format — chat.wa_chatid:", chat?.wa_chatid,
       "msg.messageType:", msg?.messageType, "msg.type:", msg?.type,
       "msg.text:", (msg?.text ?? msg?.body)?.slice(0, 80));
+    // Log all message keys + fileURL specifically for media debugging
+    if (msg) {
+      console.log("[UazAPI] message keys:", Object.keys(msg).join(","),
+        "| fileURL:", msg.fileURL, "| mediaUrl:", msg.mediaUrl,
+        "| messageid:", msg.messageid ?? msg.id);
+    }
+    console.log("[UazAPI] BaseUrl:", payload.BaseUrl);
 
     const rawJid = chat?.wa_chatid || "";
     phone = normalizePhone(rawJid.split("@")[0] || chat?.phone);
@@ -619,15 +649,22 @@ async function handleMessage(
 
   // For inbound media with no URL: download from UazAPI and store permanently in Supabase Storage
   const MEDIA_CONTENT_TYPES = ['image', 'audio', 'video', 'document', 'sticker'];
-  if (
-    !isFromMe &&
-    MEDIA_CONTENT_TYPES.includes(contentType) &&
-    !(content.mediaUrl as string) &&
-    !externalMessageId.startsWith('native_')
-  ) {
-    const creds = (channel.credentials ?? {}) as Record<string, string>;
-    const serverUrl = (creds.serverUrl ?? "").replace(/\/$/, '');
-    const credToken = creds.token ?? "";
+  const currentMediaUrl = content.mediaUrl as string | undefined;
+  const isMediaType = MEDIA_CONTENT_TYPES.includes(contentType);
+  const needsDownload = !isFromMe && isMediaType && !currentMediaUrl && !externalMessageId.startsWith('native_');
+
+  console.log(`[UazAPI:media-check] contentType=${contentType} isMedia=${isMediaType} isFromMe=${isFromMe} currentUrl=${currentMediaUrl ? 'set' : 'empty'} msgId=${externalMessageId} needsDownload=${needsDownload}`);
+
+  if (needsDownload) {
+    const creds = (channel.credentials ?? {}) as Record<string, unknown>;
+    const credsKeys = Object.keys(creds);
+    console.log(`[UazAPI:media-check] credentials keys=${credsKeys.join(',')}`);
+    // Prefer BaseUrl from webhook payload; fall back to channel.credentials.serverUrl
+    const baseUrl = isNativeFormat(payload) ? (payload.BaseUrl ?? "") : "";
+    const serverUrl = (baseUrl || (creds.serverUrl as string | undefined) || "").replace(/\/$/, '');
+    const credToken = (creds.token as string | undefined) ?? "";
+    console.log(`[UazAPI:media-check] serverUrl=${serverUrl} tokenLen=${credToken.length}`);
+
     if (serverUrl && credToken) {
       const storedUrl = await downloadAndStoreMedia(supabase, {
         organizationId: channel.organization_id,
@@ -638,7 +675,12 @@ async function handleMessage(
       });
       if (storedUrl) {
         content = { ...content, mediaUrl: storedUrl };
+        console.log(`[UazAPI:media-check] content.mediaUrl updated`);
+      } else {
+        console.warn(`[UazAPI:media-check] downloadAndStoreMedia returned null`);
       }
+    } else {
+      console.warn(`[UazAPI:media-check] Missing serverUrl or token — skipping download`);
     }
   }
 
