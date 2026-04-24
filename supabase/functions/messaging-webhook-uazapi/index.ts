@@ -106,20 +106,22 @@ function normalizeRemoteJid(remoteJid: string): string | null {
 
 /**
  * Extract text preview from UazAPI message by messageType.
+ * UazAPI real messages use message.conversation (not message.text).
  */
 function extractMessageText(data: UazApiMessagePayload["data"]): string {
   if (!data) return "[mensagem]";
-  
+
   const { messageType, message, body } = data;
-  
-  // Fallback to body field
+
+  // body field (used in our test script and some UazAPI versions)
   if (body) return body;
   if (!message) return "[mensagem]";
 
   switch (messageType) {
     case "conversation":
     case "extendedTextMessage":
-      return (message.text as string) || "[mensagem]";
+      // UazAPI real messages: message.conversation (not message.text)
+      return (message.conversation as string) || (message.text as string) || "[mensagem]";
     case "imageMessage":
       return (message.caption as string) || "[imagem]";
     case "audioMessage":
@@ -155,7 +157,10 @@ function extractMessageContent(
     case "extendedTextMessage":
       return {
         contentType: "text",
-        content: { type: "text", text: (message?.text as string) || body || "[mensagem]" },
+        content: {
+          type: "text",
+          text: (message?.conversation as string) || (message?.text as string) || body || "[mensagem]",
+        },
       };
     case "imageMessage":
       return {
@@ -434,8 +439,14 @@ async function handleMessage(
   },
   payload: UazApiMessagePayload
 ) {
+  // Log full payload for debugging (truncated to avoid log limits)
+  console.log("[UazAPI] handleMessage payload:", JSON.stringify(payload).slice(0, 800));
+
   const data = payload.data;
-  if (!data || !data.key) return;
+  if (!data || !data.key) {
+    console.warn("[UazAPI] handleMessage: missing data or data.key", { hasData: !!data });
+    return;
+  }
 
   const remoteJid = data.key.remoteJid;
 
