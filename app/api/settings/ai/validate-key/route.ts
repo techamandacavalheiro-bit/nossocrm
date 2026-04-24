@@ -11,6 +11,7 @@
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { isAllowedOrigin } from '@/lib/security/sameOrigin';
+import { AI_DEFAULT_MODELS } from '@/lib/ai/defaults';
 
 function json<T>(body: T, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -21,7 +22,8 @@ function json<T>(body: T, status = 200): Response {
 
 const ValidateSchema = z.object({
   apiKey: z.string().min(10, 'Chave muito curta'),
-  model: z.string().min(1),
+  // Model é opcional — se não vier, usa default do Google Gemini
+  model: z.string().optional(),
 });
 
 export async function POST(req: Request) {
@@ -50,10 +52,17 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const parsed = ValidateSchema.safeParse(body);
   if (!parsed.success) {
-    return json({ valid: false, error: 'Chave muito curta' }, 400);
+    // Mensagem específica do primeiro erro do Zod (ex: "Chave muito curta")
+    const firstIssue = parsed.error.issues[0];
+    const msg = firstIssue?.message || 'Dados inválidos';
+    return json({ valid: false, error: msg }, 400);
   }
 
-  const { apiKey, model } = parsed.data;
+  const { apiKey } = parsed.data;
+  // Se o cliente não enviou um model (ou veio vazio), usa o default do Google
+  const model = parsed.data.model && parsed.data.model.trim().length > 0
+    ? parsed.data.model
+    : AI_DEFAULT_MODELS.google;
 
   try {
     const ctrl = new AbortController();

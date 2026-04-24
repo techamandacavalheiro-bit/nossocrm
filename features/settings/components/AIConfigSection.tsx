@@ -6,6 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import type { AIModelInfo } from '@/app/api/ai/models/route';
 
 // Valida a API key Gemini via endpoint server-side (evita CORS do browser → Google).
+// O backend usa o modelo default ('gemini-2.0-flash') quando nenhum é passado.
 async function validateApiKey(apiKey: string, model: string): Promise<{ valid: boolean; error?: string }> {
     if (!apiKey || apiKey.trim().length < 10) {
         return { valid: false, error: 'Chave muito curta' };
@@ -16,7 +17,8 @@ async function validateApiKey(apiKey: string, model: string): Promise<{ valid: b
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({ apiKey, model }),
+            // Omite model se estiver vazio — backend usa default do Gemini
+            body: JSON.stringify(model ? { apiKey, model } : { apiKey }),
         });
 
         const data = (await res.json().catch(() => ({}))) as { valid?: boolean; error?: string };
