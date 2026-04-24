@@ -84,45 +84,31 @@ export const AIConfigSection: React.FC = () => {
 
     const { showToast } = useToast();
 
-    // Estado local para o input da key (não salva até validar)
-    const [localApiKey, setLocalApiKey] = useState(aiApiKey);
+    // Estado local para o input da key (nunca carrega a mask — sempre vazio ou nova chave)
+    const [localApiKey, setLocalApiKey] = useState('');
     const [isValidating, setIsValidating] = useState(false);
     const [validationStatus, setValidationStatus] = useState<'idle' | 'valid' | 'invalid'>(
         aiApiKey ? 'valid' : 'idle'
     );
     const [validationError, setValidationError] = useState<string | null>(null);
     // UX: mostrar LGPD expandido apenas quando ainda NÃO há key salva (primeira configuração).
-    // Depois que a key existe, manter colapsado por padrão para não “inflar” a tela.
+    // Depois que a key existe, manter colapsado por padrão para não "inflar" a tela.
     const [lgpdExpanded, setLgpdExpanded] = useState(!aiApiKey);
 
-    // Sync local state when context changes (ex: carregamento inicial)
+    // Sync UI status when server data arrives (carregamento inicial). NÃO popula o input.
     useEffect(() => {
-        setLocalApiKey(aiApiKey);
         if (aiApiKey) {
-            setValidationStatus('valid'); // Assume válida se já estava salva
+            setValidationStatus('valid'); // Chave já salva no servidor
+        } else {
+            setValidationStatus('idle');
         }
-        // Se já existe key salva, manter LGPD colapsado por padrão.
         setLgpdExpanded(!aiApiKey);
     }, [aiApiKey]);
 
-    // Reset validation apenas quando usuário EDITA a key (não no carregamento)
     const handleKeyChange = (newKey: string) => {
         setLocalApiKey(newKey);
-        if (newKey !== aiApiKey) {
-            setValidationStatus('idle');
-            setValidationError(null);
-        }
-    };
-
-    // Quando o usuário foca no input, se o conteúdo atual for a mask
-    // (bullets da chave salva), limpa tudo para ele colar a nova sem
-    // concatenar em cima das bolinhas.
-    const handleKeyFocus = () => {
-        if (localApiKey.includes('•')) {
-            setLocalApiKey('');
-            setValidationStatus('idle');
-            setValidationError(null);
-        }
+        setValidationStatus('idle');
+        setValidationError(null);
     };
 
     const handleSaveApiKey = async () => {
@@ -167,7 +153,8 @@ export const AIConfigSection: React.FC = () => {
         }
     };
 
-    const hasUnsavedChanges = localApiKey !== aiApiKey;
+    // Só tem mudança se o usuário digitou algo no campo (que sempre começa vazio)
+    const hasUnsavedChanges = localApiKey.trim().length > 0;
 
     useEffect(() => {
         if (aiKeyConfigured) {
@@ -336,8 +323,7 @@ export const AIConfigSection: React.FC = () => {
                                 type="password"
                                 value={localApiKey}
                                 onChange={(e) => handleKeyChange(e.target.value)}
-                                onFocus={handleKeyFocus}
-                                placeholder="Cole sua chave AIza..."
+                                placeholder={aiKeyConfigured ? 'Cole uma NOVA chave para substituir (AIza...)' : 'Cole sua chave AIza...'}
                                 className={`w-full bg-slate-50 dark:bg-slate-800 border rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none transition-all font-mono ${validationStatus === 'invalid'
                                         ? 'border-red-300 dark:border-red-500/50'
                                         : validationStatus === 'valid'
