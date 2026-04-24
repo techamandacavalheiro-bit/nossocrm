@@ -38,10 +38,8 @@ CREATE INDEX IF NOT EXISTS idx_deals_organization_id
 CREATE INDEX IF NOT EXISTS idx_leads_organization_id
   ON public.leads(organization_id);
 
--- ai_decisions.organization_id
-CREATE INDEX IF NOT EXISTS idx_ai_decisions_organization_id
-  ON public.ai_decisions(organization_id);
-
+-- NOTE: Skipping idx_ai_decisions_organization_id because
+-- ai_decisions doesn't have organization_id (uses user_id instead).
 -- NOTE: Skipping idx_messaging_webhook_events_organization_id
 -- because the column doesn't exist in that table. Use channel_id instead.
 
