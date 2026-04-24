@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { sanitizeUrl } from '@/lib/utils/sanitize';
 import { useSendMessage } from '@/lib/query/hooks/useMessagingMessagesQuery';
 import { queryKeys } from '@/lib/query/queryKeys';
+import { DocumentPreviewModal } from './DocumentPreviewModal';
 import type { InfiniteData } from '@tanstack/react-query';
 import type {
   MessagingMessage,
@@ -51,6 +52,8 @@ function formatAudioTime(seconds: number): string {
 // WhatsApp-style audio player
 // ---------------------------------------------------------------------------
 
+const PLAYBACK_SPEEDS = [1, 1.5, 2, 2.5, 3] as const;
+
 const AudioPlayer = memo(function AudioPlayer({
   content,
   isOutbound,
@@ -61,6 +64,7 @@ const AudioPlayer = memo(function AudioPlayer({
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState<number>(content.duration ?? 0);
+  const [playbackRate, setPlaybackRate] = useState<number>(1);
   const audioRef = useRef<HTMLAudioElement>(null);
   const waveformRef = useRef<HTMLDivElement>(null);
   const safeUrl = sanitizeUrl(content.mediaUrl);
@@ -90,11 +94,23 @@ const AudioPlayer = memo(function AudioPlayer({
     };
   }, []);
 
+  // Keep element playbackRate in sync with state
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.playbackRate = playbackRate;
+  }, [playbackRate]);
+
   const togglePlay = useCallback(() => {
     const el = audioRef.current;
     if (!el || !safeUrl) return;
     isPlaying ? el.pause() : el.play().catch(() => {});
   }, [isPlaying, safeUrl]);
+
+  const cycleSpeed = useCallback(() => {
+    setPlaybackRate((prev) => {
+      const idx = PLAYBACK_SPEEDS.indexOf(prev as typeof PLAYBACK_SPEEDS[number]);
+      return PLAYBACK_SPEEDS[(idx + 1) % PLAYBACK_SPEEDS.length];
+    });
+  }, []);
 
   const handleSeek = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const el = audioRef.current;
@@ -108,8 +124,11 @@ const AudioPlayer = memo(function AudioPlayer({
 
   const progress = duration > 0 ? currentTime / duration : 0;
 
+  // Format speed as "1x", "1.5x", "2x"
+  const speedLabel = Number.isInteger(playbackRate) ? `${playbackRate}x` : `${playbackRate}x`;
+
   return (
-    <div className="flex items-center gap-2.5 select-none" style={{ minWidth: 200 }}>
+    <div className="flex items-center gap-2 select-none" style={{ minWidth: 220 }}>
       {safeUrl && <audio ref={audioRef} src={safeUrl} preload="metadata" />}
 
       {/* Play / Pause button */}
@@ -169,6 +188,28 @@ const AudioPlayer = memo(function AudioPlayer({
       >
         {formatAudioTime(isPlaying ? currentTime : duration)}
       </span>
+
+      {/* Playback speed cycler — only visible when playing or rate != 1 */}
+      <button
+        type="button"
+        onClick={cycleSpeed}
+        disabled={!safeUrl}
+        aria-label={`Velocidade ${speedLabel}`}
+        title="Alterar velocidade"
+        className={cn(
+          'flex-shrink-0 min-w-[34px] px-1.5 py-0.5 rounded-full text-[10px] font-semibold tabular-nums transition-colors',
+          playbackRate !== 1
+            ? isOutbound
+              ? 'bg-white/25 text-white'
+              : 'bg-primary-500 text-white'
+            : isOutbound
+              ? 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
+              : 'bg-slate-200 text-slate-600 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600',
+          !safeUrl && 'opacity-40 cursor-not-allowed',
+        )}
+      >
+        {speedLabel}
+      </button>
     </div>
   );
 });
@@ -200,6 +241,45 @@ const StatusIcon = memo(function StatusIcon({ status }: { status: MessageStatus 
     default:
       return null;
   }
+});
+
+/** Clickable document card that opens a preview modal on click. */
+const DocumentMessage = memo(function DocumentMessage({ content }: { content: DocumentContent }) {
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const safeDocUrl = sanitizeUrl(content.mediaUrl);
+
+  if (!safeDocUrl) return null;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setIsPreviewOpen(true)}
+        className="flex items-center gap-2 p-2 bg-black/5 dark:bg-white/5 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition-colors w-full text-left"
+      >
+        <FileText className="w-8 h-8 text-primary-500 flex-shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="font-medium truncate">{content.fileName}</p>
+          {content.fileSize && (
+            <p className="text-xs opacity-70">
+              {content.fileSize < 1024 * 1024
+                ? `${(content.fileSize / 1024).toFixed(1)} KB`
+                : `${(content.fileSize / (1024 * 1024)).toFixed(2)} MB`}
+            </p>
+          )}
+        </div>
+      </button>
+
+      <DocumentPreviewModal
+        open={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        mediaUrl={content.mediaUrl}
+        fileName={content.fileName}
+        fileSize={content.fileSize}
+        mimeType={content.mimeType}
+      />
+    </>
+  );
 });
 
 const MessageContent = memo(function MessageContent({ message }: { message: MessagingMessage }) {
@@ -241,23 +321,7 @@ const MessageContent = memo(function MessageContent({ message }: { message: Mess
 
     case 'document': {
       const docContent = content as DocumentContent;
-      const safeDocUrl = sanitizeUrl(docContent.mediaUrl);
-      return safeDocUrl ? (
-        <a
-          href={safeDocUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 p-2 bg-black/5 dark:bg-white/5 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
-        >
-          <FileText className="w-8 h-8 text-primary-500" />
-          <div className="min-w-0">
-            <p className="font-medium truncate">{docContent.fileName}</p>
-            {docContent.fileSize && (
-              <p className="text-xs opacity-70">{(docContent.fileSize / 1024).toFixed(1)} KB</p>
-            )}
-          </div>
-        </a>
-      ) : null;
+      return <DocumentMessage content={docContent} />;
     }
 
     case 'location': {
