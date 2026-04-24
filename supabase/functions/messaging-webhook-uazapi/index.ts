@@ -216,14 +216,19 @@ const MIME_TO_EXT: Record<string, string> = {
 };
 
 /**
- * Downloads a media message from UazAPI and uploads it permanently to Supabase Storage.
- * Returns the public URL or null on any failure.
+ * Fetches the public media URL from UazAPI via /message/download.
+ * Simplicity over permanence: returns the UazAPI URL directly (valid ~2 days).
+ *
+ * This avoids all the failure modes of the previous download-and-reupload
+ * approach (bucket size limits, MIME restrictions, edge-function OOM, 413s).
+ *
+ * Trade-off: URLs expire after UazAPI's retention window (~2 days). For a CRM
+ * context this is acceptable since conversations are usually actioned well
+ * inside that window.
  */
-async function downloadAndStoreMedia(
-  supabase: ReturnType<typeof createClient>,
+async function getMediaUrlFromUazApi(
+  _supabase: ReturnType<typeof createClient>,
   {
-    organizationId,
-    conversationId,
     externalMessageId,
     serverUrl,
     token,
@@ -235,99 +240,40 @@ async function downloadAndStoreMedia(
     token: string;
   }
 ): Promise<string | null> {
-  console.log(`[UazAPI:download] START msgId=${externalMessageId} serverUrl=${serverUrl} tokenLen=${token.length}`);
+  console.log(`[UazAPI:media] GET url for msg=${externalMessageId}`);
   try {
-    const dlCtrl = new AbortController();
-    const dlTimer = setTimeout(() => dlCtrl.abort(), 20_000);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 20_000);
     let fileUrl: string | undefined;
-    let mimetype: string | undefined;
     try {
-      const dlUrl = `${serverUrl}/message/download`;
-      const dlBody = { id: externalMessageId, return_link: true, generate_mp3: true };
-      console.log(`[UazAPI:download] POST ${dlUrl} body=${JSON.stringify(dlBody)}`);
-
-      const dlRes = await fetch(dlUrl, {
+      const res = await fetch(`${serverUrl}/message/download`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', token },
-        body: JSON.stringify(dlBody),
-        signal: dlCtrl.signal,
+        body: JSON.stringify({ id: externalMessageId, return_link: true, generate_mp3: true }),
+        signal: ctrl.signal,
       });
-      console.log(`[UazAPI:download] /message/download status=${dlRes.status}`);
-
-      if (!dlRes.ok) {
-        const errText = await dlRes.text();
-        console.warn(`[UazAPI:download] ERROR body=${errText.slice(0, 500)}`);
+      console.log(`[UazAPI:media] /message/download status=${res.status}`);
+      if (!res.ok) {
+        const errText = await res.text();
+        console.warn(`[UazAPI:media] download failed: ${errText.slice(0, 300)}`);
         return null;
       }
-      const dlData = await dlRes.json() as Record<string, unknown>;
-      console.log(`[UazAPI:download] response keys=${Object.keys(dlData).join(',')}`);
-      fileUrl = dlData.fileURL as string | undefined;
-      mimetype = dlData.mimetype as string | undefined;
-      console.log(`[UazAPI:download] fileURL=${fileUrl?.slice(0, 100)} mimetype=${mimetype}`);
+      const data = await res.json() as Record<string, unknown>;
+      fileUrl = data.fileURL as string | undefined;
+      console.log(`[UazAPI:media] fileURL=${fileUrl?.slice(0, 100)} mimetype=${data.mimetype}`);
     } finally {
-      clearTimeout(dlTimer);
+      clearTimeout(timer);
     }
 
     if (!fileUrl?.startsWith('http')) {
-      console.warn(`[UazAPI:download] INVALID fileURL=${fileUrl}`);
+      console.warn(`[UazAPI:media] invalid fileURL=${fileUrl}`);
       return null;
     }
 
-    // Skip huge files that would OOM the edge function (limit: ~256MB memory).
-    // For those, return the UazAPI URL directly — it works for 2 days (uazapi retention).
-    const MAX_DOWNLOAD_SIZE = 200 * 1024 * 1024; // 200MB safety margin
-
-    const fetchCtrl = new AbortController();
-    const fetchTimer = setTimeout(() => fetchCtrl.abort(), 120_000);
-    let fileBuffer: ArrayBuffer;
-    let resolvedMime: string;
-    try {
-      console.log(`[UazAPI:download] Fetching bytes from ${fileUrl.slice(0, 80)}`);
-      const fileRes = await fetch(fileUrl, { signal: fetchCtrl.signal });
-      const contentLengthHeader = fileRes.headers.get('content-length');
-      const declaredSize = contentLengthHeader ? parseInt(contentLengthHeader, 10) : 0;
-      console.log(`[UazAPI:download] file fetch status=${fileRes.status} ct=${fileRes.headers.get('content-type')} size=${declaredSize}`);
-
-      if (!fileRes.ok) {
-        console.warn(`[UazAPI:download] File fetch failed: ${fileRes.status}`);
-        return null;
-      }
-
-      // If file is too large, don't load it into memory — fall back to UazAPI URL
-      if (declaredSize > 0 && declaredSize > MAX_DOWNLOAD_SIZE) {
-        console.warn(`[UazAPI:download] File too large (${declaredSize} bytes > ${MAX_DOWNLOAD_SIZE}) — using UazAPI URL directly (expires in 2 days)`);
-        fileRes.body?.cancel();
-        return fileUrl;
-      }
-
-      resolvedMime = mimetype || fileRes.headers.get('content-type') || 'application/octet-stream';
-      fileBuffer = await fileRes.arrayBuffer();
-      console.log(`[UazAPI:download] Downloaded ${fileBuffer.byteLength} bytes (mime=${resolvedMime})`);
-    } finally {
-      clearTimeout(fetchTimer);
-    }
-
-    const ext = MIME_TO_EXT[resolvedMime] || 'bin';
-    const storagePath = `${organizationId}/${conversationId}/${externalMessageId}.${ext}`;
-    console.log(`[UazAPI:download] Uploading to messaging-media/${storagePath}`);
-
-    const { error: upErr } = await supabase.storage
-      .from('messaging-media')
-      .upload(storagePath, fileBuffer, { contentType: resolvedMime, upsert: true });
-
-    if (upErr) {
-      console.error(`[UazAPI:download] STORAGE UPLOAD ERROR: ${upErr.message}`, upErr);
-      // Fallback: if upload failed due to size (413) or any other reason,
-      // use the UazAPI URL directly (works for 2 days per UazAPI retention)
-      console.warn(`[UazAPI:download] Falling back to UazAPI URL (temporary, 2 days)`);
-      return fileUrl;
-    }
-
-    const { data: urlData } = supabase.storage.from('messaging-media').getPublicUrl(storagePath);
-    console.log(`[UazAPI:download] SUCCESS publicUrl=${urlData.publicUrl}`);
-    return urlData.publicUrl;
+    console.log(`[UazAPI:media] SUCCESS using UazAPI URL directly`);
+    return fileUrl;
   } catch (err) {
-    console.error(`[UazAPI:download] EXCEPTION: ${err instanceof Error ? err.message : err}`, err);
+    console.error(`[UazAPI:media] EXCEPTION: ${err instanceof Error ? err.message : err}`);
     return null;
   }
 }
@@ -665,40 +611,36 @@ async function handleMessage(
     }
   }
 
-  // For inbound media with no URL: download from UazAPI and store permanently in Supabase Storage
+  // For inbound media with no URL: fetch public URL from UazAPI
   const MEDIA_CONTENT_TYPES = ['image', 'audio', 'video', 'document', 'sticker'];
   const currentMediaUrl = content.mediaUrl as string | undefined;
   const isMediaType = MEDIA_CONTENT_TYPES.includes(contentType);
-  const needsDownload = !isFromMe && isMediaType && !currentMediaUrl && !externalMessageId.startsWith('native_');
+  const needsFetch = !isFromMe && isMediaType && !currentMediaUrl && !externalMessageId.startsWith('native_');
 
-  console.log(`[UazAPI:media-check] contentType=${contentType} isMedia=${isMediaType} isFromMe=${isFromMe} currentUrl=${currentMediaUrl ? 'set' : 'empty'} msgId=${externalMessageId} needsDownload=${needsDownload}`);
+  console.log(`[UazAPI:media-check] type=${contentType} isMedia=${isMediaType} isFromMe=${isFromMe} hasUrl=${!!currentMediaUrl} msgId=${externalMessageId} needsFetch=${needsFetch}`);
 
-  if (needsDownload) {
+  if (needsFetch) {
     const creds = (channel.credentials ?? {}) as Record<string, unknown>;
-    const credsKeys = Object.keys(creds);
-    console.log(`[UazAPI:media-check] credentials keys=${credsKeys.join(',')}`);
-    // Prefer BaseUrl from webhook payload; fall back to channel.credentials.serverUrl
     const baseUrl = isNativeFormat(payload) ? (payload.BaseUrl ?? "") : "";
     const serverUrl = (baseUrl || (creds.serverUrl as string | undefined) || "").replace(/\/$/, '');
     const credToken = (creds.token as string | undefined) ?? "";
-    console.log(`[UazAPI:media-check] serverUrl=${serverUrl} tokenLen=${credToken.length}`);
 
     if (serverUrl && credToken) {
-      const storedUrl = await downloadAndStoreMedia(supabase, {
+      const mediaUrl = await getMediaUrlFromUazApi(supabase, {
         organizationId: channel.organization_id,
         conversationId,
         externalMessageId,
         serverUrl,
         token: credToken,
       });
-      if (storedUrl) {
-        content = { ...content, mediaUrl: storedUrl };
-        console.log(`[UazAPI:media-check] content.mediaUrl updated`);
+      if (mediaUrl) {
+        content = { ...content, mediaUrl };
+        console.log(`[UazAPI:media-check] mediaUrl set=${mediaUrl.slice(0, 80)}`);
       } else {
-        console.warn(`[UazAPI:media-check] downloadAndStoreMedia returned null`);
+        console.warn(`[UazAPI:media-check] getMediaUrlFromUazApi returned null — storing empty`);
       }
     } else {
-      console.warn(`[UazAPI:media-check] Missing serverUrl or token — skipping download`);
+      console.warn(`[UazAPI:media-check] missing serverUrl/token — skipping fetch`);
     }
   }
 
