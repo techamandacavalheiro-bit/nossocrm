@@ -233,7 +233,7 @@ function extractTextFromNativeMessage(
     };
   }
   if (isDocument) {
-    const fileName = msg.fileName ?? msg.docName ?? msgText || "document";
+    const fileName = (msg.fileName ?? msg.docName ?? msgText) || "document";
     return {
       text: fileName,
       contentType: "document",
