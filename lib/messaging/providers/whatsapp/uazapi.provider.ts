@@ -64,9 +64,12 @@ interface UazApiStatusResponse {
 
 /**
  * UazAPI send message response.
+ * Spec: response is the Message schema — external ID is in `messageid`.
  */
 interface UazApiSendResponse {
-  key?: {
+  messageid?: string; // external provider ID (spec: Message.messageid)
+  id?: string;        // internal UUID (spec: Message.id) — fallback
+  key?: {             // legacy shape some versions return
     id?: string;
     remoteJid?: string;
     fromMe?: boolean;
@@ -327,11 +330,12 @@ export class UazApiWhatsAppProvider extends BaseChannelProvider {
           );
       }
 
-      if (!response.key?.id) {
+      const externalId = response.messageid ?? response.key?.id ?? response.id;
+      if (!externalId) {
         return this.errorResult('SEND_FAILED', response.error || 'No message ID in response', true);
       }
 
-      return this.successResult(response.key.id);
+      return this.successResult(externalId);
     } catch (error) {
       this.log('error', 'sendMessage failed', {
         error: error instanceof Error ? error.message : error,
@@ -348,41 +352,40 @@ export class UazApiWhatsAppProvider extends BaseChannelProvider {
   }
 
   private async sendTextMessage(chatId: string, content: TextContent): Promise<UazApiSendResponse> {
+    // UazAPI spec: POST /send/text { number, text }
     return this.request<UazApiSendResponse>('POST', '/send/text', {
-      chatid: chatId,
+      number: chatId,
       text: content.text,
     });
   }
 
   private async sendImageMessage(chatId: string, content: ImageContent): Promise<UazApiSendResponse> {
+    // UazAPI spec: POST /send/media { number, type, file, text (caption) }
     const body: Record<string, unknown> = {
-      chatid: chatId,
-      media: content.mediaUrl,
-      mediatype: 'image',
+      number: chatId,
+      type: 'image',
+      file: content.mediaUrl,
     };
-
-    if (content.caption) body.caption = content.caption;
-
+    if (content.caption) body.text = content.caption;
     return this.request<UazApiSendResponse>('POST', '/send/media', body);
   }
 
   private async sendVideoMessage(chatId: string, content: VideoContent): Promise<UazApiSendResponse> {
     const body: Record<string, unknown> = {
-      chatid: chatId,
-      media: content.mediaUrl,
-      mediatype: 'video',
+      number: chatId,
+      type: 'video',
+      file: content.mediaUrl,
     };
-
-    if (content.caption) body.caption = content.caption;
-
+    if (content.caption) body.text = content.caption;
     return this.request<UazApiSendResponse>('POST', '/send/media', body);
   }
 
   private async sendAudioMessage(chatId: string, content: AudioContent): Promise<UazApiSendResponse> {
+    // Use 'audio' type for regular audio; 'ptt' for voice messages
     return this.request<UazApiSendResponse>('POST', '/send/media', {
-      chatid: chatId,
-      media: content.mediaUrl,
-      mediatype: 'audio',
+      number: chatId,
+      type: 'audio',
+      file: content.mediaUrl,
     });
   }
 
@@ -390,15 +393,14 @@ export class UazApiWhatsAppProvider extends BaseChannelProvider {
     chatId: string,
     content: DocumentContent
   ): Promise<UazApiSendResponse> {
+    // UazAPI spec: docName for document filename
     const body: Record<string, unknown> = {
-      chatid: chatId,
-      media: content.mediaUrl,
-      mediatype: 'document',
-      fileName: content.fileName,
+      number: chatId,
+      type: 'document',
+      file: content.mediaUrl,
+      docName: content.fileName,
     };
-
     if (content.mimeType) body.mimetype = content.mimeType;
-
     return this.request<UazApiSendResponse>('POST', '/send/media', body);
   }
 
@@ -407,7 +409,7 @@ export class UazApiWhatsAppProvider extends BaseChannelProvider {
     content: LocationContent
   ): Promise<UazApiSendResponse> {
     return this.request<UazApiSendResponse>('POST', '/send/location', {
-      chatid: chatId,
+      number: chatId,
       latitude: content.latitude,
       longitude: content.longitude,
       name: content.name || '',

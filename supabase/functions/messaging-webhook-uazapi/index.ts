@@ -192,6 +192,105 @@ function parseTimestamp(ts: number | undefined): Date {
   return ts > 1e10 ? new Date(ts) : new Date(ts * 1000);
 }
 
+const MIME_TO_EXT: Record<string, string> = {
+  'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
+  'video/mp4': 'mp4', 'video/3gpp': '3gp',
+  'audio/aac': 'aac', 'audio/mp4': 'm4a', 'audio/mpeg': 'mp3', 'audio/amr': 'amr',
+  'audio/ogg': 'ogg', 'audio/webm': 'webm',
+  'application/pdf': 'pdf', 'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'text/plain': 'txt', 'text/csv': 'csv',
+};
+
+/**
+ * Downloads a media message from UazAPI and uploads it permanently to Supabase Storage.
+ * Returns the public URL or null on any failure.
+ */
+async function downloadAndStoreMedia(
+  supabase: ReturnType<typeof createClient>,
+  {
+    organizationId,
+    conversationId,
+    externalMessageId,
+    serverUrl,
+    token,
+  }: {
+    organizationId: string;
+    conversationId: string;
+    externalMessageId: string;
+    serverUrl: string;
+    token: string;
+  }
+): Promise<string | null> {
+  try {
+    console.log(`[UazAPI] Downloading media for msg: ${externalMessageId}`);
+
+    const dlCtrl = new AbortController();
+    const dlTimer = setTimeout(() => dlCtrl.abort(), 20_000);
+    let fileUrl: string | undefined;
+    let mimetype: string | undefined;
+    try {
+      const dlRes = await fetch(`${serverUrl}/message/download`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', token },
+        body: JSON.stringify({ id: externalMessageId, return_link: true }),
+        signal: dlCtrl.signal,
+      });
+      if (!dlRes.ok) {
+        console.warn(`[UazAPI] /message/download returned ${dlRes.status}`);
+        return null;
+      }
+      const dlData = await dlRes.json() as Record<string, unknown>;
+      fileUrl = dlData.fileURL as string | undefined;
+      mimetype = dlData.mimetype as string | undefined;
+    } finally {
+      clearTimeout(dlTimer);
+    }
+
+    if (!fileUrl?.startsWith('http')) {
+      console.warn(`[UazAPI] No valid fileURL from /message/download: ${fileUrl}`);
+      return null;
+    }
+
+    const fetchCtrl = new AbortController();
+    const fetchTimer = setTimeout(() => fetchCtrl.abort(), 60_000);
+    let fileBuffer: ArrayBuffer;
+    let resolvedMime: string;
+    try {
+      const fileRes = await fetch(fileUrl, { signal: fetchCtrl.signal });
+      if (!fileRes.ok) {
+        console.warn(`[UazAPI] Failed to fetch media bytes: ${fileRes.status}`);
+        return null;
+      }
+      resolvedMime = mimetype || fileRes.headers.get('content-type') || 'application/octet-stream';
+      fileBuffer = await fileRes.arrayBuffer();
+    } finally {
+      clearTimeout(fetchTimer);
+    }
+
+    const ext = MIME_TO_EXT[resolvedMime] || 'bin';
+    const storagePath = `${organizationId}/${conversationId}/${externalMessageId}.${ext}`;
+
+    const { error: upErr } = await supabase.storage
+      .from('messaging-media')
+      .upload(storagePath, fileBuffer, { contentType: resolvedMime, upsert: true });
+
+    if (upErr) {
+      console.error('[UazAPI] Storage upload error:', upErr.message);
+      return null;
+    }
+
+    const { data: urlData } = supabase.storage.from('messaging-media').getPublicUrl(storagePath);
+    console.log(`[UazAPI] Media stored: ${urlData.publicUrl}`);
+    return urlData.publicUrl;
+  } catch (err) {
+    console.error('[UazAPI] downloadAndStoreMedia exception:', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 function extractTextFromNativeMessage(
   msg: UazApiNativePayload["message"]
 ): { text: string; contentType: string; content: Record<string, unknown> } {
@@ -203,7 +302,9 @@ function extractTextFromNativeMessage(
 
   // Text content: spec field is "text"; "body" is a legacy/fallback name.
   const msgText = msg.text ?? msg.body ?? "";
-  const fileUrl = msg.fileURL ?? msg.mediaUrl ?? "";
+  // Only keep full http/https URLs; relative paths or empty strings result in ""
+  const rawFileUrl = msg.fileURL ?? msg.mediaUrl ?? "";
+  const fileUrl = rawFileUrl.startsWith('http') ? rawFileUrl : "";
 
   const isText = rawType === "conversation" || rawType === "extendedtextmessage" || rawType === "text" || rawType === "chat";
   const isImage = rawType === "imagemessage" || rawType === "image";
@@ -374,7 +475,7 @@ async function autoCreateDeal(
 
 async function handleMessage(
   supabase: ReturnType<typeof createClient>,
-  channel: { id: string; organization_id: string; business_unit_id: string; external_identifier: string },
+  channel: { id: string; organization_id: string; business_unit_id: string; external_identifier: string; credentials?: Record<string, unknown> | null },
   payload: AnyPayload
 ) {
   let phone: string | null;
@@ -513,6 +614,31 @@ async function handleMessage(
         conversationId,
         contactName: pushName || phone,
       });
+    }
+  }
+
+  // For inbound media with no URL: download from UazAPI and store permanently in Supabase Storage
+  const MEDIA_CONTENT_TYPES = ['image', 'audio', 'video', 'document', 'sticker'];
+  if (
+    !isFromMe &&
+    MEDIA_CONTENT_TYPES.includes(contentType) &&
+    !(content.mediaUrl as string) &&
+    !externalMessageId.startsWith('native_')
+  ) {
+    const creds = (channel.credentials ?? {}) as Record<string, string>;
+    const serverUrl = (creds.serverUrl ?? "").replace(/\/$/, '');
+    const credToken = creds.token ?? "";
+    if (serverUrl && credToken) {
+      const storedUrl = await downloadAndStoreMedia(supabase, {
+        organizationId: channel.organization_id,
+        conversationId,
+        externalMessageId,
+        serverUrl,
+        token: credToken,
+      });
+      if (storedUrl) {
+        content = { ...content, mediaUrl: storedUrl };
+      }
     }
   }
 
