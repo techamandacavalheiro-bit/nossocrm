@@ -22,12 +22,15 @@ export interface OrgAISettings {
   aiHasGoogleKey?: boolean;
   aiHasOpenaiKey?: boolean;
   aiHasAnthropicKey?: boolean;
+  salesScript?: string;
 }
 
 export interface MergedOrgSettings extends UserSettings {
   // Org-level AI overrides/additions
   aiOrgEnabled: boolean;
   aiKeyConfigured: boolean;
+  /** Script de vendas customizado da org (markdown), usado pelo Copiloto. */
+  salesScript?: string;
 }
 
 // ============ QUERY HOOKS ============
@@ -76,6 +79,7 @@ export const useOrgSettings = (options?: { enabled?: boolean }) => {
         aiProvider: 'google' as const,
         aiModel: aiData.aiModel || base.aiModel,
         aiGoogleKey: aiData.aiGoogleKey || base.aiGoogleKey,
+        salesScript: aiData.salesScript ?? '',
         // Merged extras
         aiOrgEnabled: aiData.aiEnabled ?? false,
         aiKeyConfigured,

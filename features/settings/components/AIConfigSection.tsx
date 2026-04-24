@@ -3,6 +3,7 @@ import { useOrgSettings, useUpdateAISettings, useUpdateUserSettings } from '@/li
 import { Bot, Key, CheckCircle, AlertCircle, Loader2, Save, Trash2, ChevronDown, ChevronUp, Shield, RefreshCw } from 'lucide-react';
 import { useToast } from '@/context/ToastContext';
 import { useAuth } from '@/context/AuthContext';
+import { cn } from '@/lib/utils';
 import type { AIModelInfo } from '@/app/api/ai/models/route';
 
 // Valida a API key Gemini via endpoint server-side (evita CORS do browser → Google).
@@ -49,6 +50,7 @@ export const AIConfigSection: React.FC = () => {
     const aiThinking = orgSettings?.aiThinking ?? true;
     const aiSearch = orgSettings?.aiSearch ?? true;
     const aiApiKey = orgSettings?.aiGoogleKey ?? '';
+    const salesScriptStored = orgSettings?.salesScript ?? '';
 
     const [localModel, setLocalModel] = useState<string | null>(null);
 
@@ -96,6 +98,34 @@ export const AIConfigSection: React.FC = () => {
     // UX: mostrar LGPD expandido apenas quando ainda NÃO há key salva (primeira configuração).
     // Depois que a key existe, manter colapsado por padrão para não "inflar" a tela.
     const [lgpdExpanded, setLgpdExpanded] = useState(!aiApiKey);
+
+    // ============================================================
+    // Sales Script — prompt customizável usado pelo Copiloto de Vendas
+    // ============================================================
+    const [localSalesScript, setLocalSalesScript] = useState(salesScriptStored);
+    const [scriptExpanded, setScriptExpanded] = useState(false);
+    const [isSavingScript, setIsSavingScript] = useState(false);
+    const [scriptSavedAt, setScriptSavedAt] = useState<number | null>(null);
+
+    // Sync localSalesScript when server data arrives
+    useEffect(() => {
+        setLocalSalesScript(salesScriptStored);
+    }, [salesScriptStored]);
+
+    const hasUnsavedScript = localSalesScript !== salesScriptStored;
+
+    const handleSaveSalesScript = async () => {
+        setIsSavingScript(true);
+        try {
+            await updateAISettings.mutateAsync({ salesScript: localSalesScript });
+            setScriptSavedAt(Date.now());
+            showToast('Script de vendas salvo!', 'success');
+        } catch (err) {
+            showToast(err instanceof Error ? err.message : 'Falha ao salvar script', 'error');
+        } finally {
+            setIsSavingScript(false);
+        }
+    };
 
     // Sync UI status when server data arrives (carregamento inicial). NÃO popula o input.
     useEffect(() => {
@@ -437,6 +467,75 @@ export const AIConfigSection: React.FC = () => {
                             </div>
                         )}
                     </div>
+                </div>
+
+                {/* Script de Vendas — prompt do Copiloto */}
+                <div className="space-y-2 pt-2">
+                    <button
+                        type="button"
+                        onClick={() => setScriptExpanded(!scriptExpanded)}
+                        className="w-full flex items-center justify-between p-2.5 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-500/30 rounded-lg hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors"
+                    >
+                        <div className="flex items-center gap-2">
+                            <Bot size={16} className="text-purple-600 dark:text-purple-400" />
+                            <span className="text-sm font-semibold text-purple-800 dark:text-purple-200">
+                                ✨ Script de Vendas (Copiloto)
+                            </span>
+                            {salesScriptStored && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-200 dark:bg-purple-500/30 text-purple-800 dark:text-purple-200 font-medium">
+                                    configurado
+                                </span>
+                            )}
+                        </div>
+                        {scriptExpanded ? (
+                            <ChevronUp size={18} className="text-purple-600 dark:text-purple-400" />
+                        ) : (
+                            <ChevronDown size={18} className="text-purple-600 dark:text-purple-400" />
+                        )}
+                    </button>
+
+                    {scriptExpanded && (
+                        <div className="space-y-2 p-3 bg-purple-50/30 dark:bg-purple-900/10 border border-purple-100 dark:border-purple-500/20 rounded-lg animate-in slide-in-from-top-2 duration-200">
+                            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                Esse texto é injetado como instrução pra IA toda vez que o atendente
+                                usa o Copiloto numa conversa. Inclua: tom de voz, etapas do funil,
+                                regras de preço, objeções comuns, exemplos. Aceita markdown.
+                            </p>
+                            <textarea
+                                value={localSalesScript}
+                                onChange={(e) => setLocalSalesScript(e.target.value)}
+                                rows={12}
+                                placeholder={`# Tom de voz\nInformal profissional, direto, humano e consultivo...\n\n# Etapas do script\n## Abertura\n- Cumprimente pelo nome...\n\n# Regra de apresentação de preço\nNUNCA envie valores antes de ter coletado:\n1. ...`}
+                                className="w-full px-3 py-2 text-xs font-mono rounded-lg resize-y min-h-[200px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500 placeholder:text-slate-400"
+                            />
+                            <div className="flex items-center justify-between gap-2">
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                    {localSalesScript.length} caracteres
+                                    {scriptSavedAt && Date.now() - scriptSavedAt < 3000 && (
+                                        <span className="ml-2 text-green-600 dark:text-green-400">
+                                            ✓ Salvo
+                                        </span>
+                                    )}
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={handleSaveSalesScript}
+                                    disabled={!hasUnsavedScript || isSavingScript}
+                                    className={cn(
+                                        'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
+                                        !hasUnsavedScript || isSavingScript
+                                            ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-not-allowed'
+                                            : 'bg-purple-600 hover:bg-purple-700 text-white shadow-md',
+                                    )}
+                                >
+                                    {isSavingScript
+                                        ? <Loader2 size={14} className="animate-spin" />
+                                        : <Save size={14} />}
+                                    {isSavingScript ? 'Salvando...' : hasUnsavedScript ? 'Salvar script' : 'Salvo'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Status Banner - use localApiKey para refletir estado atual após salvar */}

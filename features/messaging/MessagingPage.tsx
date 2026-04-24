@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { MessageSquare, User, CheckCircle, MoreVertical, LinkIcon, Trash2, RotateCcw, Search } from 'lucide-react';
+import { MessageSquare, User, CheckCircle, MoreVertical, LinkIcon, Trash2, RotateCcw, Search, Sparkles } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { sanitizeUrl } from '@/lib/utils/sanitize';
@@ -17,6 +17,7 @@ import { ChannelIndicator } from './components/ChannelIndicator';
 import { WindowExpiryBadge } from './components/WindowExpiryBadge';
 import { MessageSearchBar } from './components/MessageSearchBar';
 import { AssignmentDropdown } from './components/AssignmentDropdown';
+import { CopilotPanel } from './components/CopilotPanel';
 import {
   useConversation,
   useMarkConversationRead,
@@ -58,6 +59,8 @@ export function MessagingPage({ initialConversationId }: MessagingPageProps = {}
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [replyToMessage, setReplyToMessage] = useState<import('@/lib/messaging/types').MessagingMessage | null>(null);
+  const [isCopilotOpen, setIsCopilotOpen] = useState(false);
+  const [prefillInputText, setPrefillInputText] = useState<string | null>(null);
 
   // Subscribe to realtime updates
   useRealtimeSyncMessaging();
@@ -227,6 +230,14 @@ export function MessagingPage({ initialConversationId }: MessagingPageProps = {}
                 />
                 <button
                   type="button"
+                  onClick={() => setIsCopilotOpen(true)}
+                  className="p-2 text-purple-500 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-500/10 rounded-lg transition-colors"
+                  title="Copiloto de Vendas"
+                >
+                  <Sparkles className="w-5 h-5" />
+                </button>
+                <button
+                  type="button"
                   onClick={() => setShowSearch((v) => !v)}
                   className={cn(
                     'p-2 rounded-lg transition-colors',
@@ -318,6 +329,16 @@ export function MessagingPage({ initialConversationId }: MessagingPageProps = {}
               conversation={selectedConversation}
               replyTo={replyToMessage}
               onCancelReply={() => setReplyToMessage(null)}
+              prefillText={prefillInputText}
+              onPrefillConsumed={() => setPrefillInputText(null)}
+            />
+
+            {/* Copiloto de Vendas — modal lateral */}
+            <CopilotPanel
+              open={isCopilotOpen}
+              conversationId={selectedConversation.id}
+              onClose={() => setIsCopilotOpen(false)}
+              onUseSuggestion={(text) => setPrefillInputText(text)}
             />
           </>
         ) : (

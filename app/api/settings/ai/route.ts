@@ -19,6 +19,7 @@ const UpdateOrgAISettingsSchema = z
     aiEnabled: z.boolean().optional(),
     aiModel: z.string().min(1).max(200).optional(),
     aiGoogleKey: z.string().optional(),
+    salesScript: z.string().max(20000).optional(),
     telegramBotToken: z.string().optional(),
     telegramChatId: z.string().nullable().optional(),
   })
@@ -51,7 +52,7 @@ export async function GET() {
 
   const { data: orgSettings, error: orgError } = await supabase
     .from('organization_settings')
-    .select('ai_enabled, ai_provider, ai_model, ai_google_key, telegram_bot_token, telegram_chat_id')
+    .select('ai_enabled, ai_provider, ai_model, ai_google_key, sales_script, telegram_bot_token, telegram_chat_id')
     .eq('organization_id', profile.organization_id)
     .maybeSingle();
 
@@ -72,6 +73,7 @@ export async function GET() {
     aiProvider: 'google' as Provider,
     aiModel: orgSettings?.ai_model || AI_DEFAULT_MODELS.google,
     aiHasGoogleKey: Boolean(orgSettings?.ai_google_key),
+    salesScript: orgSettings?.sales_script ?? '',
     hasTelegramBot: Boolean(orgSettings?.telegram_bot_token),
     telegramChatId: orgSettings?.telegram_chat_id ?? null,
   };
@@ -145,6 +147,11 @@ export async function POST(req: Request) {
 
   const googleKey = normalizeKey(updates.aiGoogleKey);
   if (googleKey !== undefined) dbUpdates.ai_google_key = googleKey;
+
+  if (updates.salesScript !== undefined) {
+    const trimmed = updates.salesScript.trim();
+    dbUpdates.sales_script = trimmed.length === 0 ? null : trimmed;
+  }
 
   if (updates.telegramBotToken !== undefined) {
     dbUpdates.telegram_bot_token = updates.telegramBotToken.trim() || null;

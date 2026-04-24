@@ -29,6 +29,10 @@ interface MessageInputProps {
   conversation: ConversationView;
   replyTo?: MessagingMessage | null;
   onCancelReply?: () => void;
+  /** Texto externo para injetar no textarea (ex: vindo do Copiloto). Muda → seta o texto. */
+  prefillText?: string | null;
+  /** Callback após consumir o prefillText, para o pai limpar o estado. */
+  onPrefillConsumed?: () => void;
 }
 
 interface PendingMedia {
@@ -123,7 +127,7 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
-export function MessageInput({ conversation, replyTo, onCancelReply }: MessageInputProps) {
+export function MessageInput({ conversation, replyTo, onCancelReply, prefillText, onPrefillConsumed }: MessageInputProps) {
   const [text, setText] = useState('');
   const [showTemplates, setShowTemplates] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -201,6 +205,23 @@ export function MessageInput({ conversation, replyTo, onCancelReply }: MessageIn
   const isDisabled = conversation.isWindowExpired || isSendingTemplate || isUploading;
   // Show mic button when input is empty, no pending media, and not recording
   const showMicButton = !text.trim() && !pendingMedia && !isDisabled;
+
+  // Consume external prefill text (vinda do Copiloto, por exemplo)
+  useEffect(() => {
+    if (prefillText == null) return;
+    setText(prefillText);
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (ta) {
+        ta.focus();
+        ta.style.height = 'auto';
+        ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+        const len = prefillText.length;
+        ta.setSelectionRange(len, len);
+      }
+    });
+    onPrefillConsumed?.();
+  }, [prefillText, onPrefillConsumed]);
 
   // Cleanup blob URL on unmount to prevent memory leaks (FIX-03)
   // Also used by clearMedia to avoid depending on the entire pendingMedia object.
