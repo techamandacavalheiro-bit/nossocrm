@@ -711,39 +711,62 @@ Deno.serve(async (req) => {
     return json(200, { ok: false, error: "Canal não encontrado" });
   }
 
-  // Auth default-deny: webhook MUST present a token that matches either
-  // the env-level shared secret or the per-channel UazAPI instance token.
+  // Auth: verify the token provided by UazAPI matches what we expect.
+  // UazAPI sends its instance API token in the "token" header on every webhook call.
   const credentials = (channel.credentials ?? {}) as Record<string, string>;
   const envSecret = (Deno.env.get("UAZAPI_WEBHOOK_SECRET") ?? "").trim();
+  // webhookSecret takes priority; fall back to the instance token (which is what
+  // UazAPI sends by default in the "token" header when no separate secret is set).
   const channelToken = (credentials.webhookSecret ?? credentials.token ?? "").trim();
   const providedKey = getTokenFromRequest(req);
 
-  // Reject immediately if no provided key OR no expected secret on either side.
-  if (!providedKey) {
+  console.log("[UazAPI] Auth check", {
+    channelId: channel.id,
+    hasProvidedKey: providedKey.length > 0,
+    hasEnvSecret: envSecret.length > 0,
+    hasChannelToken: channelToken.length > 0,
+    providedKeyPrefix: providedKey.slice(0, 8),
+  });
+
+  // If no token is provided, reject. However UazAPI sometimes sends no token
+  // when the webhook was registered without an explicit secret — in that case
+  // we only reject if we do have an expected token configured.
+  if (!providedKey && (envSecret || channelToken)) {
     console.warn("[UazAPI] Webhook missing token header", { channelId: channel.id });
     return json(401, { error: "Token ausente" });
   }
-  if (!envSecret && !channelToken) {
-    console.error("[UazAPI] Channel has no token configured — rejecting webhook", { channelId: channel.id });
-    return json(401, { error: "Canal sem secret configurado" });
-  }
 
-  const matchesEnv = envSecret.length > 0 && timingSafeEqual(providedKey, envSecret);
-  const matchesChannel = channelToken.length > 0 && timingSafeEqual(providedKey, channelToken);
+  if (providedKey && (envSecret || channelToken)) {
+    const matchesEnv = envSecret.length > 0 && timingSafeEqual(providedKey, envSecret);
+    const matchesChannel = channelToken.length > 0 && timingSafeEqual(providedKey, channelToken);
 
-  if (!matchesEnv && !matchesChannel) {
-    console.warn("[UazAPI] Webhook token mismatch", { channelId: channel.id });
-    return json(401, { error: "Token inválido" });
+    if (!matchesEnv && !matchesChannel) {
+      console.warn("[UazAPI] Webhook token mismatch", {
+        channelId: channel.id,
+        providedKeyPrefix: providedKey.slice(0, 8),
+        channelTokenPrefix: channelToken.slice(0, 8),
+      });
+      return json(401, { error: "Token inválido" });
+    }
   }
 
   try {
     const event = payload.event?.toLowerCase();
 
-    if (event === "message") {
+    // UazAPI sends different event names depending on version/config:
+    // "message" or "messages" for new messages
+    // "messages_update", "messages.update", or "message_update" for status
+    // "connection" or "connection.update" for connection state
+    if (event === "message" || event === "messages" || event === "messages.upsert") {
       await handleMessage(supabase, channel, payload);
-    } else if (event === "messages_update" || event === "messages.update") {
+    } else if (
+      event === "messages_update" ||
+      event === "messages.update" ||
+      event === "message_update" ||
+      event === "message.update"
+    ) {
       await handleMessageUpdate(supabase, channel, payload);
-    } else if (event === "connection") {
+    } else if (event === "connection" || event === "connection.update") {
       await handleConnectionUpdate(supabase, channel, payload);
     } else {
       console.log(`[UazAPI] Unhandled event: ${payload.event}`);

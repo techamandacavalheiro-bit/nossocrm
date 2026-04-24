@@ -251,9 +251,13 @@ export class UazApiWhatsAppProvider extends BaseChannelProvider {
    */
   async configureWebhook(webhookUrl: string): Promise<{ success: boolean; error?: string }> {
     try {
+      // Include the instance token in the webhook config so UazAPI sends it back
+      // in the "token" header on every webhook call. Without this UazAPI may send
+      // no auth header and the edge function will reject the request.
       await this.request('POST', '/webhook', {
         enabled: true,
         url: webhookUrl,
+        token: this.webhookSecret || this.token,
         events: ['messages', 'messages_update', 'connection'],
         excludeMessages: ['wasSentByApi'],
       });
