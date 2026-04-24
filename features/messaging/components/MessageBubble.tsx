@@ -15,6 +15,7 @@ import type {
   TextContent,
   ImageContent,
   AudioContent,
+  VideoContent,
   DocumentContent,
   LocationContent,
   ReactionContent,
@@ -282,13 +283,30 @@ const MessageContent = memo(function MessageContent({ message }: { message: Mess
       return <AudioPlayer content={audioContent} isOutbound={isOutbound} />;
     }
 
-    case 'video':
+    case 'video': {
+      const videoContent = content as VideoContent;
+      const safeVideoUrl = sanitizeUrl(videoContent.mediaUrl ?? '');
       return (
-        <div className="flex items-center gap-2">
-          <Image className="w-5 h-5" />
-          <span>Vídeo</span>
+        <div className="space-y-1">
+          {safeVideoUrl ? (
+            <video
+              src={safeVideoUrl}
+              controls
+              className="max-w-[240px] rounded-lg"
+              style={{ maxHeight: 180 }}
+            />
+          ) : (
+            <div className="flex items-center gap-2 text-sm">
+              <Image className="w-5 h-5" />
+              <span>Vídeo</span>
+            </div>
+          )}
+          {videoContent.caption && (
+            <p className="whitespace-pre-wrap break-words text-sm">{videoContent.caption}</p>
+          )}
         </div>
       );
+    }
 
     case 'sticker':
       return (

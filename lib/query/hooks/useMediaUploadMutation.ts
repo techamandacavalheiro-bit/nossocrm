@@ -1,7 +1,13 @@
 /**
  * @fileoverview Media Upload Mutation
  *
- * Hook para upload de mídia via API, retornando URL para uso em mensagens.
+ * Hook para upload de mídia via signed URL flow:
+ * 1. Envia metadados (JSON) para /api/messaging/media/upload
+ * 2. Recebe { signedUrl, publicUrl, ... }
+ * 3. Faz PUT do arquivo diretamente no Supabase Storage via signedUrl
+ * 4. Retorna { mediaUrl, mediaType, mimeType, fileName, fileSize }
+ *
+ * Esse fluxo evita o limite de 4.5 MB do body em funções serverless da Vercel.
  *
  * @module lib/query/hooks/useMediaUploadMutation
  */
@@ -25,21 +31,38 @@ export function useMediaUploadMutation() {
       file: File;
       conversationId: string;
     }): Promise<MediaUploadResult> => {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('conversationId', conversationId);
-
-      const response = await fetch('/api/messaging/media/upload', {
+      // Step 1: Request a signed upload URL (no file in body)
+      const metaResponse = await fetch('/api/messaging/media/upload', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversationId,
+          fileName: file.name,
+          mimeType: file.type,
+          fileSize: file.size,
+        }),
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Upload failed');
+      if (!metaResponse.ok) {
+        const error = await metaResponse.json();
+        throw new Error(error.error || 'Failed to get upload URL');
       }
 
-      return response.json();
+      const { signedUrl, publicUrl, mediaType, mimeType, fileName, fileSize } =
+        await metaResponse.json();
+
+      // Step 2: Upload file directly to Supabase Storage via signed URL
+      const uploadResponse = await fetch(signedUrl, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type },
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error(`Direct upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
+      }
+
+      return { mediaUrl: publicUrl, mediaType, mimeType, fileName, fileSize };
     },
   });
 }

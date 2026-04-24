@@ -1,15 +1,19 @@
 /**
  * POST /api/messaging/media/upload
  *
- * Upload media for messaging. Stores in Supabase Storage and returns the public URL.
- * Accepts multipart/form-data with:
- * - file: the media file
- * - conversationId: the target conversation (for org ownership validation)
+ * Returns a signed upload URL so the client can PUT the file directly to
+ * Supabase Storage, bypassing the 4.5 MB Vercel serverless body limit.
+ *
+ * Request body (JSON):
+ *   { conversationId, fileName, mimeType, fileSize }
+ *
+ * Response (JSON):
+ *   { signedUrl, path, publicUrl, mediaType, mimeType, fileName, fileSize }
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-export const maxDuration = 120;
+export const maxDuration = 30;
 import crypto from 'crypto';
 
 // WhatsApp limits (Meta API v25 — https://developers.facebook.com/docs/whatsapp/cloud-api/reference/media)
@@ -51,6 +55,19 @@ function getMaxSize(mediaType: string): number {
   }
 }
 
+const MIME_TO_EXT: Record<string, string> = {
+  'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
+  'video/mp4': 'mp4', 'video/3gpp': '3gp',
+  'audio/aac': 'aac', 'audio/mp4': 'm4a', 'audio/mpeg': 'mp3', 'audio/amr': 'amr', 'audio/ogg': 'ogg', 'audio/webm': 'webm',
+  'application/pdf': 'pdf', 'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  'text/plain': 'txt', 'text/csv': 'csv',
+};
+
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
 
@@ -72,13 +89,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
   }
 
-  const formData = await req.formData();
-  const file = formData.get('file') as File | null;
-  const conversationId = formData.get('conversationId') as string | null;
+  // Parse JSON metadata — no file in the body
+  let body: { conversationId?: string; fileName?: string; mimeType?: string; fileSize?: number };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
 
-  if (!file || !conversationId) {
+  const { conversationId, fileName, mimeType, fileSize } = body;
+
+  if (!conversationId || !fileName || !mimeType || fileSize == null) {
     return NextResponse.json(
-      { error: 'file and conversationId are required' },
+      { error: 'conversationId, fileName, mimeType and fileSize are required' },
       { status: 400 }
     );
   }
@@ -95,18 +118,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
   }
 
-  // Validate file type
-  const mediaType = getMediaType(file.type);
+  // Validate MIME type
+  const mediaType = getMediaType(mimeType);
   if (!mediaType) {
     return NextResponse.json(
-      { error: `Tipo de arquivo não suportado: ${file.type}` },
+      { error: `Tipo de arquivo não suportado: ${mimeType}` },
       { status: 400 }
     );
   }
 
-  // Validate file size
+  // Validate file size declared by client
   const maxSize = getMaxSize(mediaType);
-  if (file.size > maxSize) {
+  if (fileSize > maxSize) {
     const maxMB = Math.round(maxSize / (1024 * 1024));
     return NextResponse.json(
       { error: `Arquivo excede o limite de ${maxMB}MB para ${mediaType}` },
@@ -115,56 +138,41 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Derive extension from validated MIME type (not user-supplied filename)
-    const MIME_TO_EXT: Record<string, string> = {
-      'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
-      'video/mp4': 'mp4', 'video/3gpp': '3gp',
-      'audio/aac': 'aac', 'audio/mp4': 'm4a', 'audio/mpeg': 'mp3', 'audio/amr': 'amr', 'audio/ogg': 'ogg', 'audio/webm': 'webm',
-      'application/pdf': 'pdf', 'application/msword': 'doc',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-      'application/vnd.ms-excel': 'xls',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
-      'application/vnd.ms-powerpoint': 'ppt',
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
-      'text/plain': 'txt', 'text/csv': 'csv',
-    };
-    const ext = MIME_TO_EXT[file.type] || 'bin';
+    const ext = MIME_TO_EXT[mimeType] || 'bin';
     const uniqueId = crypto.randomUUID();
     const storagePath = `${profile.organization_id}/${conversationId}/${uniqueId}.${ext}`;
 
-    // Upload to Supabase Storage
-    const fileBuffer = Buffer.from(await file.arrayBuffer());
-    const { error: uploadError } = await supabase.storage
+    // Create a signed upload URL (client will PUT directly to Supabase Storage)
+    const { data: signedData, error: signedError } = await supabase.storage
       .from('messaging-media')
-      .upload(storagePath, fileBuffer, {
-        contentType: file.type,
-        upsert: false,
-      });
+      .createSignedUploadUrl(storagePath);
 
-    if (uploadError) {
-      console.error('[API] Media upload error:', uploadError);
+    if (signedError || !signedData) {
+      console.error('[API] Failed to create signed upload URL:', signedError);
       return NextResponse.json(
-        { error: 'Failed to upload file' },
+        { error: 'Failed to create upload URL' },
         { status: 500 }
       );
     }
 
-    // Get public URL
+    // Compute the public URL (will be valid once the client uploads)
     const { data: urlData } = supabase.storage
       .from('messaging-media')
       .getPublicUrl(storagePath);
 
     return NextResponse.json({
-      mediaUrl: urlData.publicUrl,
+      signedUrl: signedData.signedUrl,
+      path: storagePath,
+      publicUrl: urlData.publicUrl,
       mediaType,
-      mimeType: file.type,
-      fileName: file.name,
-      fileSize: file.size,
+      mimeType,
+      fileName,
+      fileSize,
     });
   } catch (error) {
     console.error('[API] Media upload error:', error);
     return NextResponse.json(
-      { error: 'Failed to upload media' },
+      { error: 'Failed to create upload URL' },
       { status: 500 }
     );
   }
