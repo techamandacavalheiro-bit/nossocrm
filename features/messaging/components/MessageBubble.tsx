@@ -3,9 +3,12 @@
 import React, { memo, useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
 import { Check, CheckCheck, Clock, AlertCircle, FileText, MapPin, Play, Pause, Image, Reply, Trash2 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { sanitizeUrl } from '@/lib/utils/sanitize';
 import { useSendMessage } from '@/lib/query/hooks/useMessagingMessagesQuery';
+import { queryKeys } from '@/lib/query/queryKeys';
+import type { InfiniteData } from '@tanstack/react-query';
 import type {
   MessagingMessage,
   MessageStatus,
@@ -442,6 +445,7 @@ export const MessageBubble = memo(function MessageBubble({
   const isOutbound = message.direction === 'outbound';
   const time = format(new Date(message.createdAt), 'HH:mm');
   const { mutate: sendMessage } = useSendMessage();
+  const queryClient = useQueryClient();
   const [isDeleting, setIsDeleting] = useState(false);
 
   const isDeleted = !!(message.metadata as Record<string, unknown>)?.deleted;
@@ -472,12 +476,27 @@ export const MessageBubble = memo(function MessageBubble({
   const handleDelete = useCallback(async () => {
     if (!confirm('Apagar esta mensagem para todos?')) return;
     setIsDeleting(true);
+
+    // Optimistic update: mark deleted immediately in cache
+    const deletedMeta = { ...(message.metadata ?? {}), deleted: true, deleted_at: new Date().toISOString() };
+    const deletedContent = { type: 'text' as const, text: '[Mensagem apagada]' };
+    const applyDelete = (m: MessagingMessage): MessagingMessage =>
+      m.id === message.id ? { ...m, metadata: deletedMeta, content: deletedContent } : m;
+
+    const flatKey = queryKeys.messagingMessages.byConversation(conversationId);
+    queryClient.setQueryData<MessagingMessage[]>(flatKey, (old) => old ? old.map(applyDelete) : old);
+    const infiniteKey = [...flatKey, 'infinite'] as const;
+    queryClient.setQueryData<InfiniteData<{ messages: MessagingMessage[]; nextCursor: string | null }>>(
+      infiniteKey,
+      (old) => old ? { ...old, pages: old.pages.map(p => ({ ...p, messages: p.messages.map(applyDelete) })) } : old
+    );
+
     try {
       await fetch(`/api/messaging/messages/${message.id}/delete`, { method: 'POST' });
     } finally {
       setIsDeleting(false);
     }
-  }, [message.id]);
+  }, [message.id, message.metadata, conversationId, queryClient]);
 
   return (
     <div

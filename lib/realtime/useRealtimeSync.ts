@@ -203,8 +203,11 @@ export function useRealtimeSync(
                   ...(db.failed_at != null && { failedAt: db.failed_at as string }),
                   ...(db.error_code != null && { errorCode: db.error_code as string }),
                   ...(db.error_message != null && { errorMessage: db.error_message as string }),
-                  // Include metadata so reaction updates (metadata.reactions) propagate to the UI
+                  // Include metadata so reaction/delete updates propagate to the UI
                   ...(db.metadata != null && { metadata: db.metadata as Record<string, unknown> }),
+                  // Include content so deleted message text updates in the UI
+                  ...(db.content != null && { content: db.content as MessagingMessage['content'] }),
+                  ...(db.content_type != null && { contentType: db.content_type as MessagingMessage['contentType'] }),
                 };
 
                 const applyPatch = (m: MessagingMessage) =>
