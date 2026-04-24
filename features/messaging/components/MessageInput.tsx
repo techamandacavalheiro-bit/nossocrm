@@ -10,13 +10,14 @@ declare global {
     flush(): Int8Array;
   }};
 }
-import { Send, Paperclip, Smile, Clock, FileText, X, Loader2, Image, File as FileIcon, Mic, Square, Reply } from 'lucide-react';
+import { Send, Paperclip, Smile, Clock, FileText, X, Loader2, Image, File as FileIcon, Mic, Square, Reply, Sparkles, RefreshCw } from 'lucide-react';
 import EmojiPicker, { type EmojiClickData, Theme } from 'emoji-picker-react';
 import { cn } from '@/lib/utils';
 import { useSendTextMessage, useSendMessage } from '@/lib/query/hooks/useMessagingMessagesQuery';
 import { useAssignConversation } from '@/lib/query/hooks/useConversationsQuery';
 import { useAuth } from '@/context/AuthContext';
 import { useMediaUploadMutation } from '@/lib/query/hooks/useMediaUploadMutation';
+import { useSuggestReplies } from '@/lib/query/hooks/useAiSuggestReplies';
 import {
   useApprovedTemplatesQuery,
   useSendTemplateMutation,
@@ -143,6 +144,45 @@ export function MessageInput({ conversation, replyTo, onCancelReply }: MessageIn
   const uploadMedia = useMediaUploadMutation();
   const { mutate: sendTemplate, isPending: isSendingTemplate } = useSendTemplateMutation();
   const { mutate: assignConversation } = useAssignConversation();
+  const suggestReplies = useSuggestReplies();
+  const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
+  const [aiSuggestionsError, setAiSuggestionsError] = useState<string | null>(null);
+
+  const handleRequestSuggestions = useCallback(() => {
+    setAiSuggestionsError(null);
+    suggestReplies.mutate(
+      { conversationId: conversation.id },
+      {
+        onSuccess: (suggestions) => setAiSuggestions(suggestions),
+        onError: (err) => {
+          setAiSuggestions([]);
+          setAiSuggestionsError(err instanceof Error ? err.message : 'Falha ao gerar sugestões');
+        },
+      }
+    );
+  }, [conversation.id, suggestReplies]);
+
+  const handleSelectSuggestion = useCallback((suggestion: string) => {
+    setText(suggestion);
+    setAiSuggestions([]);
+    setAiSuggestionsError(null);
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (ta) {
+        ta.focus();
+        ta.style.height = 'auto';
+        ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+        // posicionar cursor no fim
+        const len = suggestion.length;
+        ta.setSelectionRange(len, len);
+      }
+    });
+  }, []);
+
+  const handleDismissSuggestions = useCallback(() => {
+    setAiSuggestions([]);
+    setAiSuggestionsError(null);
+  }, []);
 
   // Claim (or sequester) conversation on send: assign to current user regardless of
   // current assignee. If already mine, this is a no-op on the DB.
@@ -620,6 +660,58 @@ export function MessageInput({ conversation, replyTo, onCancelReply }: MessageIn
         </div>
       )}
 
+      {/* AI Copilot — sugestões de resposta */}
+      {(aiSuggestions.length > 0 || aiSuggestionsError) && (
+        <div className="px-4 pt-3 pb-1">
+          <div className="rounded-lg border border-purple-200 dark:border-purple-500/30 bg-purple-50 dark:bg-purple-950/20 p-2.5 space-y-1.5">
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-purple-700 dark:text-purple-300">
+                <Sparkles className="w-3.5 h-3.5" />
+                Sugestões da IA
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={handleRequestSuggestions}
+                  disabled={suggestReplies.isPending}
+                  className="p-1 text-purple-600 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/30 rounded transition-colors disabled:opacity-50"
+                  title="Gerar novas sugestões"
+                  aria-label="Gerar novas sugestões"
+                >
+                  <RefreshCw className={cn('w-3.5 h-3.5', suggestReplies.isPending && 'animate-spin')} />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDismissSuggestions}
+                  className="p-1 text-purple-600 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/30 rounded transition-colors"
+                  title="Fechar"
+                  aria-label="Fechar sugestões"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+            {aiSuggestionsError ? (
+              <p className="text-xs text-red-600 dark:text-red-400 px-1 py-1">{aiSuggestionsError}</p>
+            ) : (
+              <div className="space-y-1">
+                {aiSuggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => handleSelectSuggestion(s)}
+                    className="w-full text-left px-2.5 py-1.5 text-sm rounded-md bg-white dark:bg-slate-800 hover:bg-purple-100 dark:hover:bg-purple-900/40 border border-slate-200 dark:border-slate-700 hover:border-purple-300 dark:hover:border-purple-500/50 transition-colors text-slate-800 dark:text-slate-200"
+                    title="Clique para usar esta sugestão"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="flex items-end gap-2 p-3">
         <input
           ref={fileInputRef}
@@ -681,6 +773,24 @@ export function MessageInput({ conversation, replyTo, onCancelReply }: MessageIn
                 />
               </div>
             )}
+            <button
+              type="button"
+              onClick={handleRequestSuggestions}
+              disabled={suggestReplies.isPending || isDisabled}
+              className={cn(
+                'p-2 rounded-xl transition-colors',
+                suggestReplies.isPending
+                  ? 'text-purple-500'
+                  : 'text-slate-400 hover:text-purple-500',
+                'disabled:opacity-50 disabled:cursor-not-allowed',
+              )}
+              title="Sugestões da IA"
+              aria-label="Gerar sugestões de resposta com IA"
+            >
+              {suggestReplies.isPending
+                ? <Loader2 className="w-5 h-5 animate-spin" />
+                : <Sparkles className="w-5 h-5" />}
+            </button>
             <button
               type="button"
               onClick={() => setShowEmojiPicker(prev => !prev)}
