@@ -35,6 +35,7 @@ import { ConfirmDialog as ConfirmModal } from '@/components/ui/confirm-dialog';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { cn } from '@/lib/utils/cn';
+import { useRealtimeSync } from '@/lib/realtime/useRealtimeSync';
 import {
   useChannelsQuery,
   useDeleteChannelMutation,
@@ -692,6 +693,10 @@ function EmptyChannelsState({ onAdd }: { onAdd: () => void }) {
 export function ChannelsSection() {
   const { profile } = useAuth();
   const { addToast } = useToast();
+
+  // Realtime: keep channel status live so connection_update webhooks
+  // reflect on the UI without manual refresh.
+  useRealtimeSync(['messaging_channels']);
 
   // Queries
   const { data: channels = [], isLoading } = useChannelsQuery();

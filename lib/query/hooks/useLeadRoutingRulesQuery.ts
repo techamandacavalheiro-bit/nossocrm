@@ -145,18 +145,25 @@ export function useChannelsWithoutRoutingRules() {
 
       const channelsWithRules = new Set(rules?.map((r) => r.channel_id) || []);
 
-      // Filter out channels that already have rules
+      // Filter out channels that already have rules.
+      // Channels without business_unit_id are still returned so the user can
+      // see them and assign one before creating the routing rule (a routing
+      // rule requires a business_unit_id; flagging is_orphan helps the UI
+      // disable the "create rule" button and show a hint instead of failing
+      // silently on submit).
       return (channels || [])
         .filter((c) => !channelsWithRules.has(c.id))
         .map((c) => {
           const bu = c.business_unit as unknown as { id: string; name: string } | null;
+          const isOrphan = !c.business_unit_id;
           return {
             id: c.id,
             name: c.name,
             channelType: c.channel_type,
             externalIdentifier: c.external_identifier,
             businessUnitId: c.business_unit_id,
-            businessUnitName: bu?.name || 'Sem unidade',
+            businessUnitName: bu?.name || (isOrphan ? 'Sem unidade — atribua uma antes de criar regra' : 'Sem unidade'),
+            isOrphan,
           };
         });
     },

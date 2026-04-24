@@ -65,8 +65,27 @@ function json(status: number, body: unknown) {
 }
 
 function getTokenFromRequest(req: Request): string {
-  const token = req.headers.get("token") || "";
-  return token.trim();
+  // UazAPI sends the instance token in the "token" header on webhooks.
+  // Some setups also use Authorization: Bearer <token>.
+  const tokenHeader = req.headers.get("token") || "";
+  if (tokenHeader.trim()) return tokenHeader.trim();
+
+  const auth = req.headers.get("authorization") || "";
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : "";
+}
+
+/**
+ * Constant-time string comparison to avoid timing attacks during
+ * webhook secret verification.
+ */
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
 }
 
 /**
@@ -188,14 +207,36 @@ function extractMessageContent(
  * Map UazAPI numeric status to internal string status.
  * 1→sent, 2→sent, 3→delivered, 4→read
  */
-function mapNumericStatus(status: number): string | null {
-  const map: Record<number, string> = {
-    1: "sent",
-    2: "sent",
-    3: "delivered",
-    4: "read",
+function mapNumericStatus(status: number | string | undefined | null): string | null {
+  // UazAPI sometimes sends status as string ("3"), sometimes as number (3),
+  // and sometimes as the textual form ("DELIVERY_ACK"). Normalize all cases.
+  if (status === undefined || status === null || status === "") return null;
+
+  const numeric = typeof status === "number" ? status : parseInt(String(status), 10);
+  if (!Number.isNaN(numeric)) {
+    const map: Record<number, string> = {
+      0: "pending",
+      1: "sent",
+      2: "sent",
+      3: "delivered",
+      4: "read",
+      5: "played",
+    };
+    if (map[numeric]) return map[numeric];
+  }
+
+  // Textual fallback (Baileys-style names)
+  const textMap: Record<string, string> = {
+    PENDING: "pending",
+    SENT: "sent",
+    SERVER_ACK: "sent",
+    DELIVERY_ACK: "delivered",
+    DELIVERED: "delivered",
+    READ: "read",
+    PLAYED: "played",
   };
-  return map[status] ?? null;
+  const upper = String(status).toUpperCase();
+  return textMap[upper] ?? null;
 }
 
 /**
@@ -544,7 +585,8 @@ async function handleMessageUpdate(
   payload: UazApiMessagePayload
 ) {
   const data = payload.data;
-  if (!data || !data.key || data.status === undefined) return;
+  if (!data || !data.key || !data.key.id) return;
+  if (data.status === undefined || data.status === null) return;
 
   const status = mapNumericStatus(data.status);
   if (!status) {
@@ -552,16 +594,31 @@ async function handleMessageUpdate(
     return;
   }
 
+  // Update the specific message by external_message_id, restricted to
+  // conversations that belong to THIS channel (avoids race where two
+  // channels could share an external id, and prevents the previous bug
+  // where conversation_id=null would update orphan messages globally).
+  const { data: convs, error: convErr } = await supabase
+    .from("messaging_conversations")
+    .select("id")
+    .eq("channel_id", channel.id);
+
+  if (convErr) {
+    console.error("[UazAPI] Error fetching conversations for status update:", convErr);
+    return;
+  }
+  if (!convs || convs.length === 0) {
+    // No conversations yet — nothing to update
+    return;
+  }
+
+  const conversationIds = convs.map((c) => c.id);
+
   const { error } = await supabase
     .from("messaging_messages")
     .update({ status })
     .eq("external_message_id", data.key.id)
-    .eq("conversation_id", (await supabase
-      .from("messaging_conversations")
-      .select("id")
-      .eq("channel_id", channel.id)
-      .limit(1)
-      .single()).data?.id);
+    .in("conversation_id", conversationIds);
 
   if (error) {
     console.error("[UazAPI] Error updating message status:", error);
@@ -639,13 +696,28 @@ Deno.serve(async (req) => {
     return json(200, { ok: false, error: "Canal não encontrado" });
   }
 
-  // Auth default-deny
-  const webhookSecret =
-    Deno.env.get("UAZAPI_WEBHOOK_SECRET") ??
-    (channel.credentials as Record<string, string>)?.token;
+  // Auth default-deny: webhook MUST present a token that matches either
+  // the env-level shared secret or the per-channel UazAPI instance token.
+  const credentials = (channel.credentials ?? {}) as Record<string, string>;
+  const envSecret = (Deno.env.get("UAZAPI_WEBHOOK_SECRET") ?? "").trim();
+  const channelToken = (credentials.webhookSecret ?? credentials.token ?? "").trim();
   const providedKey = getTokenFromRequest(req);
 
-  if (!webhookSecret || !providedKey || providedKey !== webhookSecret) {
+  // Reject immediately if no provided key OR no expected secret on either side.
+  if (!providedKey) {
+    console.warn("[UazAPI] Webhook missing token header", { channelId: channel.id });
+    return json(401, { error: "Token ausente" });
+  }
+  if (!envSecret && !channelToken) {
+    console.error("[UazAPI] Channel has no token configured — rejecting webhook", { channelId: channel.id });
+    return json(401, { error: "Canal sem secret configurado" });
+  }
+
+  const matchesEnv = envSecret.length > 0 && timingSafeEqual(providedKey, envSecret);
+  const matchesChannel = channelToken.length > 0 && timingSafeEqual(providedKey, channelToken);
+
+  if (!matchesEnv && !matchesChannel) {
+    console.warn("[UazAPI] Webhook token mismatch", { channelId: channel.id });
     return json(401, { error: "Token inválido" });
   }
 

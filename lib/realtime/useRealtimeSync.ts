@@ -993,8 +993,12 @@ export function useRealtimeSyncKanban(options: UseRealtimeSyncOptions = {}) {
 
 /**
  * Subscribe to Messaging-related tables
- * Optimized for the messaging inbox
+ * Optimized for the messaging inbox.
+ *
+ * Includes messaging_channels so the channel status indicator updates
+ * live when a webhook of connection_update arrives (otherwise the UI
+ * gets stuck on "Conectando..." until a manual refresh).
  */
 export function useRealtimeSyncMessaging(options: UseRealtimeSyncOptions = {}) {
-  return useRealtimeSync(['messaging_conversations', 'messaging_messages'], options);
+  return useRealtimeSync(['messaging_conversations', 'messaging_messages', 'messaging_channels'], options);
 }

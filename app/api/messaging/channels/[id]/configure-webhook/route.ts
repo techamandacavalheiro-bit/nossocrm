@@ -83,25 +83,67 @@ export async function POST(req: Request, { params }: RouteParams) {
 
   const webhookUrl = `${supabaseUrl}/functions/v1/${webhookFn}/${channelId}`;
 
-  try {
-    const provider = ChannelProviderFactory.createProvider(channel.channel_type, channel.provider);
+  // Validate credentials shape before instantiating the provider so users
+  // get a clear 400 instead of a vague 500 when the channel was saved
+  // with missing fields.
+  const credentials = (channel.credentials ?? {}) as Record<string, unknown>;
+  if (!credentials || typeof credentials !== 'object' || Object.keys(credentials).length === 0) {
+    return json({
+      success: false,
+      error: 'Canal sem credenciais configuradas. Edite o canal e preencha as credenciais antes de configurar o webhook.',
+    }, 400);
+  }
 
+  let provider: Awaited<ReturnType<typeof ChannelProviderFactory.createProvider>>;
+  try {
+    provider = ChannelProviderFactory.createProvider(channel.channel_type, channel.provider);
+  } catch (err) {
+    return json({
+      success: false,
+      error: `Provider "${channel.provider}" não está disponível: ${err instanceof Error ? err.message : 'erro desconhecido'}`,
+    }, 400);
+  }
+
+  // Run provider-level validation if available (each provider implements
+  // validateConfig() to check required fields like serverUrl/token).
+  if ('validateConfig' in provider && typeof (provider as { validateConfig?: unknown }).validateConfig === 'function') {
+    const validation = (provider as { validateConfig: (cfg: unknown) => { valid: boolean; errors?: Array<{ field: string; message: string }> } }).validateConfig({
+      channelId: channel.id,
+      channelType: channel.channel_type,
+      provider: channel.provider,
+      externalIdentifier: channel.external_identifier,
+      credentials,
+    });
+    if (!validation.valid) {
+      return json({
+        success: false,
+        error: 'Credenciais inválidas',
+        details: validation.errors,
+      }, 400);
+    }
+  }
+
+  if (!('configureWebhook' in provider) || typeof (provider as { configureWebhook?: unknown }).configureWebhook !== 'function') {
+    return json({
+      success: false,
+      error: `O provider "${channel.provider}" não suporta configuração automática de webhook. Configure manualmente seguindo as instruções na tela.`,
+      webhookUrl,
+    }, 400);
+  }
+
+  try {
     await provider.initialize({
       channelId: channel.id,
       channelType: channel.channel_type,
       provider: channel.provider,
       externalIdentifier: channel.external_identifier,
-      credentials: channel.credentials as Record<string, string>,
+      credentials: credentials as Record<string, string>,
     });
-
-    if (!('configureWebhook' in provider) || typeof (provider as { configureWebhook?: unknown }).configureWebhook !== 'function') {
-      return json({ error: 'Provider does not implement configureWebhook' }, 400);
-    }
 
     const result = await (provider as { configureWebhook: (url: string) => Promise<{ success: boolean; error?: string }> }).configureWebhook(webhookUrl);
 
     if (!result.success) {
-      return json({ success: false, error: result.error || 'Failed to configure webhook', webhookUrl }, 502);
+      return json({ success: false, error: result.error || 'Falha ao configurar webhook no provider', webhookUrl }, 502);
     }
 
     return json({ success: true, webhookUrl });
@@ -109,7 +151,7 @@ export async function POST(req: Request, { params }: RouteParams) {
     console.error('Error configuring webhook:', error);
     return json({
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to configure webhook',
+      error: error instanceof Error ? error.message : 'Falha ao configurar webhook',
       webhookUrl,
     }, 500);
   }
