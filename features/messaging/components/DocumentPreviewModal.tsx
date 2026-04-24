@@ -82,14 +82,23 @@ export const DocumentPreviewModal = memo(function DocumentPreviewModal({
   if (!open) return null;
 
   const ext = getExtension(fileName);
-  const isNativePreview = !!mimeType && NATIVE_PREVIEW_MIME.has(mimeType);
+  // Detect MIME from extension too (UazAPI often sends fileName="document" with no ext, no mime)
+  const MIME_FROM_EXT: Record<string, string> = {
+    pdf: 'application/pdf', txt: 'text/plain', csv: 'text/csv',
+    jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+    webp: 'image/webp', gif: 'image/gif',
+  };
+  const inferredMime = MIME_FROM_EXT[ext] ?? mimeType ?? '';
+  const isNativePreview = NATIVE_PREVIEW_MIME.has(inferredMime);
   const isOfficePreview = OFFICE_EXTENSIONS.has(ext);
-  const canPreview = !!safeUrl && (isNativePreview || isOfficePreview);
+  // If we have a URL but no recognized type, try Google Docs viewer anyway —
+  // it accepts most formats and will render "cannot preview" if it can't.
+  const useGoogleFallback = !!safeUrl && !isNativePreview && !isOfficePreview;
+  const canPreview = !!safeUrl;
 
-  // Google Docs embedded viewer for Office formats
   const previewSrc = isNativePreview
     ? safeUrl
-    : isOfficePreview
+    : (isOfficePreview || useGoogleFallback)
       ? `https://docs.google.com/viewer?url=${encodeURIComponent(safeUrl)}&embedded=true`
       : '';
 

@@ -2,13 +2,14 @@
 
 import React, { memo, useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
-import { Check, CheckCheck, Clock, AlertCircle, FileText, MapPin, Play, Pause, Image, Reply, Trash2 } from 'lucide-react';
+import { Check, CheckCheck, Clock, AlertCircle, FileText, MapPin, Play, Pause, Image, Reply, Trash2, Maximize2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { sanitizeUrl } from '@/lib/utils/sanitize';
 import { useSendMessage } from '@/lib/query/hooks/useMessagingMessagesQuery';
 import { queryKeys } from '@/lib/query/queryKeys';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
+import { VideoPreviewModal } from './VideoPreviewModal';
 import type { InfiniteData } from '@tanstack/react-query';
 import type {
   MessagingMessage,
@@ -243,6 +244,60 @@ const StatusIcon = memo(function StatusIcon({ status }: { status: MessageStatus 
   }
 });
 
+/** Inline video preview with a corner "expand" button that opens a fullscreen modal. */
+const VideoMessage = memo(function VideoMessage({ content }: { content: VideoContent }) {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const safeVideoUrl = sanitizeUrl(content.mediaUrl ?? '');
+
+  if (!safeVideoUrl) {
+    return (
+      <div className="flex items-center gap-2 text-sm">
+        <Image className="w-5 h-5" />
+        <span>Vídeo</span>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="space-y-1">
+        <div className="relative group/video inline-block">
+          <video
+            src={safeVideoUrl}
+            controls
+            className="rounded-lg max-w-[360px] w-full"
+            style={{ maxHeight: 280 }}
+          />
+          {/* Expand button overlay — top-right */}
+          <button
+            type="button"
+            onClick={() => setIsModalOpen(true)}
+            className={cn(
+              'absolute top-2 right-2 p-1.5 rounded-full',
+              'bg-black/60 hover:bg-black/80 text-white',
+              'opacity-0 group-hover/video:opacity-100 transition-opacity',
+            )}
+            title="Abrir em tela cheia"
+            aria-label="Abrir em tela cheia"
+          >
+            <Maximize2 className="w-4 h-4" />
+          </button>
+        </div>
+        {content.caption && (
+          <p className="whitespace-pre-wrap break-words text-sm">{content.caption}</p>
+        )}
+      </div>
+
+      <VideoPreviewModal
+        open={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        mediaUrl={content.mediaUrl ?? ''}
+        caption={content.caption}
+      />
+    </>
+  );
+});
+
 /** Clickable document card that opens a preview modal on click. */
 const DocumentMessage = memo(function DocumentMessage({ content }: { content: DocumentContent }) {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -349,27 +404,7 @@ const MessageContent = memo(function MessageContent({ message }: { message: Mess
 
     case 'video': {
       const videoContent = content as VideoContent;
-      const safeVideoUrl = sanitizeUrl(videoContent.mediaUrl ?? '');
-      return (
-        <div className="space-y-1">
-          {safeVideoUrl ? (
-            <video
-              src={safeVideoUrl}
-              controls
-              className="max-w-[240px] rounded-lg"
-              style={{ maxHeight: 180 }}
-            />
-          ) : (
-            <div className="flex items-center gap-2 text-sm">
-              <Image className="w-5 h-5" />
-              <span>Vídeo</span>
-            </div>
-          )}
-          {videoContent.caption && (
-            <p className="whitespace-pre-wrap break-words text-sm">{videoContent.caption}</p>
-          )}
-        </div>
-      );
+      return <VideoMessage content={videoContent} />;
     }
 
     case 'sticker':
