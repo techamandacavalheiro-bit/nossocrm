@@ -181,6 +181,24 @@ export class ChannelRouterService {
   }
 
   /**
+   * Delete a message from the external provider (e.g. WhatsApp "delete for everyone").
+   * Falls back gracefully if the provider does not support deletion.
+   */
+  async deleteMessage(channelId: string, externalMessageId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const provider = await this.getProviderForChannel(channelId);
+      const p = provider as { deleteMessage?: (id: string) => Promise<{ success: boolean; error?: string }> };
+      if (typeof p.deleteMessage !== 'function') {
+        return { success: false, error: 'Provider does not support message deletion' };
+      }
+      return await p.deleteMessage(externalMessageId);
+    } catch (error) {
+      console.error('[ChannelRouter] deleteMessage error:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  /**
    * Get connection status for a channel.
    *
    * @param channelId - The channel ID

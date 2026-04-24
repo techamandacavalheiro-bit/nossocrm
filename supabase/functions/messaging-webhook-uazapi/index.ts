@@ -1,23 +1,13 @@
 /**
  * UazAPI Webhook Handler
  *
- * Recebe eventos da UazAPI (mensagens, status, etc.) e processa:
- * - Mensagens recebidas → cria/atualiza conversa + insere mensagem
- * - Status updates → atualiza status da mensagem
- * - Connection updates → atualiza status do canal
+ * Suporta o formato NATIVO do UazAPI (uazapiGO):
+ * - { BaseUrl, EventType, chat: { wa_chatid, name, phone }, message: { id, body, fromMe, ... } }
  *
- * Rota:
- * - `POST /functions/v1/messaging-webhook-uazapi/<channel_id>`
+ * E também o formato de teste legado:
+ * - { event, instance, data: { key: { remoteJid, id, fromMe }, ... } }
  *
- * Autenticação:
- * - Header `token` verificado contra `UAZAPI_WEBHOOK_SECRET`
- *   (global) ou, se ausente, contra o `token` nos credentials do canal.
- * - Nunca aceita sem auth (default-deny).
- *
- * Deploy:
- * - Esta função deve ser deployada com `--no-verify-jwt` pois recebe
- *   chamadas externas da UazAPI sem JWT do Supabase.
- * - Exemplo: `supabase functions deploy messaging-webhook-uazapi --no-verify-jwt`
+ * Deploy: supabase functions deploy messaging-webhook-uazapi --no-verify-jwt
  */
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -25,26 +15,68 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 // TYPES
 // =============================================================================
 
-interface UazApiMessageKey {
-  remoteJid: string;
-  id: string;
-  fromMe: boolean;
+/** Formato nativo do UazAPI (uazapiGO-Webhook/1.0) */
+interface UazApiNativePayload {
+  BaseUrl: string;
+  EventType: string; // "messages", "messages_update", "connection"
+  chat?: {
+    id?: string;
+    name?: string;
+    phone?: string;
+    wa_chatid?: string; // "5544998685747@s.whatsapp.net"
+    owner?: string;     // número do negócio
+    wa_archived?: boolean;
+  };
+  message?: {
+    // ID fields (spec: messageid = external ID)
+    id?: string;
+    messageid?: string;
+    // Direction
+    from?: string;
+    fromMe?: boolean;
+    // Type: spec uses "messageType" with values like "conversation", "imageMessage", etc.
+    // Also accept "type" with short values like "text", "image", "audio"
+    messageType?: string;
+    type?: string;
+    // Text content: spec field is "text", not "body"
+    text?: string;
+    body?: string;      // fallback / alternative name
+    caption?: string;
+    // Media
+    fileURL?: string;   // spec field name for media URL
+    mediaUrl?: string;  // fallback
+    fileName?: string;
+    docName?: string;   // spec uses docName for document filename
+    // Location
+    latitude?: number;
+    longitude?: number;
+    // Time: spec "messageTimestamp" in ms; "timestamp" may be in seconds
+    messageTimestamp?: number;
+    timestamp?: number;
+    // Sender info
+    senderName?: string;
+    // Other
+    quotedMessage?: unknown;
+    quoted?: string;    // ID of quoted message (spec field)
+  };
 }
 
-interface UazApiMessagePayload {
+/** Formato legado (usado no test-webhook.sh) */
+interface UazApiLegacyPayload {
   event: string;
   instance: string;
   data?: {
-    key?: UazApiMessageKey;
+    key?: { remoteJid: string; id: string; fromMe: boolean };
     pushName?: string;
-    senderNumber?: string;
     message?: Record<string, unknown>;
     messageType?: string;
     messageTimestamp?: number;
     body?: string;
-    status?: number;
+    status?: number | string;
   };
 }
+
+type AnyPayload = UazApiNativePayload | UazApiLegacyPayload | Record<string, unknown>;
 
 // =============================================================================
 // HELPERS
@@ -65,12 +97,12 @@ function json(status: number, body: unknown) {
 }
 
 function getTokenFromRequest(req: Request): string {
-  // 1. Query param ?token= (preferred for UazAPI — they don't send headers)
+  // 1. Query param ?token= (UazAPI não envia headers de auth)
   const url = new URL(req.url);
   const queryToken = url.searchParams.get("token") || "";
   if (queryToken.trim()) return queryToken.trim();
 
-  // 2. "token" header
+  // 2. Header "token"
   const tokenHeader = req.headers.get("token") || "";
   if (tokenHeader.trim()) return tokenHeader.trim();
 
@@ -80,10 +112,6 @@ function getTokenFromRequest(req: Request): string {
   return match ? match[1].trim() : "";
 }
 
-/**
- * Constant-time string comparison to avoid timing attacks during
- * webhook secret verification.
- */
 function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let diff = 0;
@@ -93,165 +121,147 @@ function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/**
- * Normalize remoteJid to a clean phone number (no +).
- * Handles @s.whatsapp.net suffix.
- */
-function normalizeRemoteJid(remoteJid: string): string | null {
-  if (!remoteJid) return null;
-  const phone = remoteJid.split("@")[0];
-  const digits = phone.replace(/\D/g, "");
+/** Normaliza qualquer formato de número para +5511999999999 */
+function normalizePhone(raw: string | undefined | null): string | null {
+  if (!raw) return null;
+  const digits = raw.replace(/\D/g, "");
   return digits ? `+${digits}` : null;
 }
 
-/**
- * Extract text preview from UazAPI message by messageType.
- * UazAPI real messages use message.conversation (not message.text).
- */
-function extractMessageText(data: UazApiMessagePayload["data"]): string {
-  if (!data) return "[mensagem]";
-
-  const { messageType, message, body } = data;
-
-  // body field (used in our test script and some UazAPI versions)
-  if (body) return body;
-  if (!message) return "[mensagem]";
-
-  switch (messageType) {
-    case "conversation":
-    case "extendedTextMessage":
-      // UazAPI real messages: message.conversation (not message.text)
-      return (message.conversation as string) || (message.text as string) || "[mensagem]";
-    case "imageMessage":
-      return (message.caption as string) || "[imagem]";
-    case "audioMessage":
-      return "[áudio]";
-    case "videoMessage":
-      return (message.caption as string) || "[vídeo]";
-    case "documentMessage":
-      return (message.fileName as string) || "[documento]";
-    case "locationMessage": {
-      const lat = message.latitude ?? 0;
-      const lng = message.longitude ?? 0;
-      return `[localização: ${lat}, ${lng}]`;
-    }
-    default:
-      return "[mensagem]";
-  }
+/** Detecta se o payload é do formato nativo UazAPI */
+function isNativeFormat(payload: AnyPayload): payload is UazApiNativePayload {
+  return typeof (payload as UazApiNativePayload).EventType === "string";
 }
 
-/**
- * Extract structured content from UazAPI message by messageType.
- */
-function extractMessageContent(
-  data: UazApiMessagePayload["data"]
-): { contentType: string; content: Record<string, unknown> } {
-  if (!data) {
-    return { contentType: "text", content: { type: "text", text: "[mensagem]" } };
-  }
+/** Extrai o tipo de evento de qualquer formato */
+function extractEventType(payload: AnyPayload): string | undefined {
+  const p = payload as Record<string, unknown>;
+  const et = p.EventType ?? p.event;
+  return typeof et === "string" ? et.toLowerCase() : undefined;
+}
+
+// =============================================================================
+// MESSAGE TEXT / CONTENT EXTRACTION
+// =============================================================================
+
+function extractTextFromLegacyData(
+  data: UazApiLegacyPayload["data"]
+): { text: string; contentType: string; content: Record<string, unknown> } {
+  if (!data) return { text: "[mensagem]", contentType: "text", content: { type: "text", text: "[mensagem]" } };
 
   const { messageType, message, body } = data;
 
+  // body field (test script)
+  if (body) return { text: body, contentType: "text", content: { type: "text", text: body } };
+  if (!message) return { text: "[mensagem]", contentType: "text", content: { type: "text", text: "[mensagem]" } };
+
   switch (messageType) {
     case "conversation":
-    case "extendedTextMessage":
-      return {
-        contentType: "text",
-        content: {
-          type: "text",
-          text: (message?.conversation as string) || (message?.text as string) || body || "[mensagem]",
-        },
-      };
-    case "imageMessage":
-      return {
-        contentType: "image",
-        content: {
-          type: "image",
-          mediaUrl: (message?.url as string) || "",
-          caption: message?.caption as string,
-        },
-      };
+    case "extendedTextMessage": {
+      const text = (message.conversation as string) || (message.text as string) || "[mensagem]";
+      return { text, contentType: "text", content: { type: "text", text } };
+    }
+    case "imageMessage": {
+      const caption = (message.caption as string) || "[imagem]";
+      return { text: caption, contentType: "image", content: { type: "image", mediaUrl: (message.url as string) || "", caption } };
+    }
     case "audioMessage":
-      return {
-        contentType: "audio",
-        content: { type: "audio", mediaUrl: (message?.url as string) || "" },
-      };
-    case "videoMessage":
-      return {
-        contentType: "video",
-        content: {
-          type: "video",
-          mediaUrl: (message?.url as string) || "",
-          caption: message?.caption as string,
-        },
-      };
+      return { text: "[áudio]", contentType: "audio", content: { type: "audio", mediaUrl: (message.url as string) || "" } };
+    case "videoMessage": {
+      const caption = (message.caption as string) || "[vídeo]";
+      return { text: caption, contentType: "video", content: { type: "video", mediaUrl: (message.url as string) || "", caption } };
+    }
     case "documentMessage": {
-      return {
-        contentType: "document",
-        content: {
-          type: "document",
-          mediaUrl: (message?.url as string) || "",
-          fileName: (message?.fileName as string) || "document",
-        },
-      };
+      const fileName = (message.fileName as string) || "document";
+      return { text: fileName, contentType: "document", content: { type: "document", mediaUrl: (message.url as string) || "", fileName } };
     }
     case "locationMessage": {
-      return {
-        contentType: "location",
-        content: {
-          type: "location",
-          latitude: (message?.latitude as number) ?? 0,
-          longitude: (message?.longitude as number) ?? 0,
-        },
-      };
+      const lat = (message.latitude as number) ?? 0;
+      const lng = (message.longitude as number) ?? 0;
+      const text = `[localização: ${lat}, ${lng}]`;
+      return { text, contentType: "location", content: { type: "location", latitude: lat, longitude: lng } };
     }
     default:
-      return {
-        contentType: "text",
-        content: { type: "text", text: `[${messageType || "mensagem"}]` },
-      };
+      return { text: "[mensagem]", contentType: "text", content: { type: "text", text: `[${messageType || "mensagem"}]` } };
   }
 }
 
-/**
- * Map UazAPI numeric status to internal string status.
- * 1→sent, 2→sent, 3→delivered, 4→read
- */
-function mapNumericStatus(status: number | string | undefined | null): string | null {
-  // UazAPI sometimes sends status as string ("3"), sometimes as number (3),
-  // and sometimes as the textual form ("DELIVERY_ACK"). Normalize all cases.
-  if (status === undefined || status === null || status === "") return null;
+/** Parse timestamp from UazAPI (may be seconds or milliseconds). */
+function parseTimestamp(ts: number | undefined): Date {
+  if (!ts) return new Date();
+  return ts > 1e10 ? new Date(ts) : new Date(ts * 1000);
+}
 
-  const numeric = typeof status === "number" ? status : parseInt(String(status), 10);
-  if (!Number.isNaN(numeric)) {
-    const map: Record<number, string> = {
-      0: "pending",
-      1: "sent",
-      2: "sent",
-      3: "delivered",
-      4: "read",
-      5: "played",
+function extractTextFromNativeMessage(
+  msg: UazApiNativePayload["message"]
+): { text: string; contentType: string; content: Record<string, unknown> } {
+  if (!msg) return { text: "[mensagem]", contentType: "text", content: { type: "text", text: "[mensagem]" } };
+
+  // UazAPI spec: messageType uses WhatsApp native names ("conversation", "imageMessage", etc.)
+  // or short names ("text", "image", "audio", etc.) — handle both.
+  const rawType = (msg.messageType ?? msg.type ?? "conversation").toLowerCase();
+
+  // Text content: spec field is "text"; "body" is a legacy/fallback name.
+  const msgText = msg.text ?? msg.body ?? "";
+  const fileUrl = msg.fileURL ?? msg.mediaUrl ?? "";
+
+  const isText = rawType === "conversation" || rawType === "extendedtextmessage" || rawType === "text" || rawType === "chat";
+  const isImage = rawType === "imagemessage" || rawType === "image";
+  const isAudio = rawType === "audiomessage" || rawType === "audio" || rawType === "ptt" || rawType === "myaudio";
+  const isVideo = rawType === "videomessage" || rawType === "videoplaymessage" || rawType === "video";
+  const isDocument = rawType === "documentmessage" || rawType === "document";
+  const isLocation = rawType === "locationmessage" || rawType === "location";
+  const isSticker = rawType === "stickermessage" || rawType === "sticker";
+
+  if (isImage) {
+    const caption = msg.caption ?? msgText;
+    return {
+      text: caption || "[imagem]",
+      contentType: "image",
+      content: { type: "image", mediaUrl: fileUrl, caption: caption || undefined },
     };
-    if (map[numeric]) return map[numeric];
   }
-
-  // Textual fallback (Baileys-style names)
-  const textMap: Record<string, string> = {
-    PENDING: "pending",
-    SENT: "sent",
-    SERVER_ACK: "sent",
-    DELIVERY_ACK: "delivered",
-    DELIVERED: "delivered",
-    READ: "read",
-    PLAYED: "played",
-  };
-  const upper = String(status).toUpperCase();
-  return textMap[upper] ?? null;
+  if (isAudio) {
+    return { text: "[áudio]", contentType: "audio", content: { type: "audio", mediaUrl: fileUrl } };
+  }
+  if (isVideo) {
+    const caption = msg.caption ?? msgText;
+    return {
+      text: caption || "[vídeo]",
+      contentType: "video",
+      content: { type: "video", mediaUrl: fileUrl, caption: caption || undefined },
+    };
+  }
+  if (isDocument) {
+    const fileName = msg.fileName ?? msg.docName ?? msgText || "document";
+    return {
+      text: fileName,
+      contentType: "document",
+      content: { type: "document", mediaUrl: fileUrl, fileName },
+    };
+  }
+  if (isLocation) {
+    const lat = msg.latitude ?? 0;
+    const lng = msg.longitude ?? 0;
+    const locText = `[localização: ${lat}, ${lng}]`;
+    return { text: locText, contentType: "location", content: { type: "location", latitude: lat, longitude: lng } };
+  }
+  if (isSticker) {
+    return { text: "[figurinha]", contentType: "sticker", content: { type: "sticker", mediaUrl: fileUrl } };
+  }
+  if (isText) {
+    const finalText = msgText || "[mensagem]";
+    return { text: finalText, contentType: "text", content: { type: "text", text: finalText } };
+  }
+  // Unknown type — try to use text content
+  const finalText = msgText || `[${rawType}]`;
+  return { text: finalText, contentType: "text", content: { type: "text", text: finalText } };
 }
 
-/**
- * Trigger AI Agent processing for inbound message.
- */
+// =============================================================================
+// AI PROCESSING
+// =============================================================================
+
 async function triggerAIProcessing(params: {
   conversationId: string;
   organizationId: string;
@@ -261,67 +271,44 @@ async function triggerAIProcessing(params: {
   const appUrl = Deno.env.get("APP_URL") || Deno.env.get("CRM_APP_URL") || "http://localhost:3000";
   const internalSecret = Deno.env.get("INTERNAL_API_SECRET");
 
-  if (!internalSecret) {
-    console.warn("[UazAPI] INTERNAL_API_SECRET not set, skipping AI processing");
-    return;
-  }
-
-  const endpoint = `${appUrl}/api/messaging/ai/process`;
+  if (!internalSecret) return;
 
   try {
-    const response = await fetch(endpoint, {
+    const response = await fetch(`${appUrl}/api/messaging/ai/process`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Internal-Secret": internalSecret,
-      },
-      body: JSON.stringify({
-        conversationId: params.conversationId,
-        organizationId: params.organizationId,
-        messageText: params.messageText,
-        messageId: params.messageId,
-      }),
+      headers: { "Content-Type": "application/json", "X-Internal-Secret": internalSecret },
+      body: JSON.stringify(params),
     });
-
-    if (!response.ok) {
-      console.warn(`[UazAPI] AI processing returned ${response.status}`);
-    }
+    if (!response.ok) console.warn(`[UazAPI] AI processing returned ${response.status}`);
   } catch (error) {
-    console.warn("[UazAPI] Error triggering AI processing:", error instanceof Error ? error.message : error);
+    console.warn("[UazAPI] Error triggering AI:", error instanceof Error ? error.message : error);
   }
 }
 
-/**
- * Update channel status based on connection state.
- */
+// =============================================================================
+// CHANNEL STATUS
+// =============================================================================
+
 async function updateChannelStatus(
   supabase: ReturnType<typeof createClient>,
-  channel: { id: string },
+  channelId: string,
   state: string
 ): Promise<void> {
-  const statusMap: Record<string, "connected" | "disconnected" | "error"> = {
-    open: "connected",
-    close: "disconnected",
+  const map: Record<string, string> = {
+    open: "connected", connected: "connected",
+    close: "disconnected", disconnected: "disconnected",
     refused: "error",
   };
-
-  const newStatus = statusMap[state] ?? "disconnected";
-
-  const { error } = await supabase
-    .from("messaging_channels")
-    .update({ status: newStatus })
-    .eq("id", channel.id);
-
-  if (error) {
-    console.error("[UazAPI] Failed to update channel status:", error, { state, channelId: channel.id });
-  } else {
-    console.log(`[UazAPI] Channel ${channel.id} status → ${newStatus}`);
-  }
+  const newStatus = map[state.toLowerCase()] ?? "disconnected";
+  const { error } = await supabase.from("messaging_channels").update({ status: newStatus }).eq("id", channelId);
+  if (error) console.error("[UazAPI] Failed to update channel status:", error);
+  else console.log(`[UazAPI] Channel ${channelId} → ${newStatus}`);
 }
 
-/**
- * Get lead routing rule for auto-deal creation.
- */
+// =============================================================================
+// LEAD ROUTING
+// =============================================================================
+
 async function getLeadRoutingRule(
   supabase: ReturnType<typeof createClient>,
   channelId: string
@@ -332,19 +319,10 @@ async function getLeadRoutingRule(
     .eq("channel_id", channelId)
     .maybeSingle();
 
-  if (error) {
-    console.error("[UazAPI] Error fetching lead routing rule:", error);
-    return null;
-  }
-
-  if (!data || !data.enabled || !data.board_id) return null;
-
+  if (error || !data || !data.enabled || !data.board_id) return null;
   return { boardId: data.board_id, stageId: data.stage_id };
 }
 
-/**
- * Auto-create a deal for a new conversation if routing rule exists.
- */
 async function autoCreateDeal(
   supabase: ReturnType<typeof createClient>,
   params: {
@@ -358,7 +336,6 @@ async function autoCreateDeal(
 ) {
   try {
     let stageId = params.stageId;
-
     if (!stageId) {
       const { data: firstStage, error: stageErr } = await supabase
         .from("board_stages")
@@ -367,11 +344,7 @@ async function autoCreateDeal(
         .order("order", { ascending: true })
         .limit(1)
         .single();
-
-      if (stageErr || !firstStage) {
-        console.error("[UazAPI] Could not find first stage for auto-create deal:", stageErr);
-        return;
-      }
+      if (stageErr || !firstStage) { console.error("[UazAPI] No stage for auto-deal:", stageErr); return; }
       stageId = firstStage.id;
     }
 
@@ -388,38 +361,8 @@ async function autoCreateDeal(
       .select("id")
       .single();
 
-    if (dealErr) {
-      console.error("[UazAPI] Error auto-creating deal:", dealErr);
-      return;
-    }
-
-    console.log(`[UazAPI] Auto-created deal: ${newDeal.id} for contact ${params.contactId}`);
-
-    const { data: conv, error: convMetaErr } = await supabase
-      .from("messaging_conversations")
-      .select("metadata")
-      .eq("id", params.conversationId)
-      .maybeSingle();
-
-    if (convMetaErr) {
-      console.error("[UazAPI] Failed to read conversation metadata:", convMetaErr);
-      return;
-    }
-
-    const { error: metaUpdateErr } = await supabase
-      .from("messaging_conversations")
-      .update({
-        metadata: {
-          ...((conv?.metadata as Record<string, unknown>) || {}),
-          deal_id: newDeal.id,
-          auto_created_deal: true,
-        },
-      })
-      .eq("id", params.conversationId);
-
-    if (metaUpdateErr) {
-      console.error("[UazAPI] Failed to update conversation metadata:", metaUpdateErr);
-    }
+    if (dealErr) { console.error("[UazAPI] Error auto-creating deal:", dealErr); return; }
+    console.log(`[UazAPI] Auto-created deal: ${newDeal.id}`);
   } catch (error) {
     console.error("[UazAPI] Unexpected error in autoCreateDeal:", error);
   }
@@ -431,47 +374,75 @@ async function autoCreateDeal(
 
 async function handleMessage(
   supabase: ReturnType<typeof createClient>,
-  channel: {
-    id: string;
-    organization_id: string;
-    business_unit_id: string;
-    external_identifier: string;
-  },
-  payload: UazApiMessagePayload
+  channel: { id: string; organization_id: string; business_unit_id: string; external_identifier: string },
+  payload: AnyPayload
 ) {
-  // Log full payload for debugging (truncated to avoid log limits)
-  console.log("[UazAPI] handleMessage payload:", JSON.stringify(payload).slice(0, 800));
+  let phone: string | null;
+  let isFromMe: boolean;
+  let externalMessageId: string;
+  let pushName: string | undefined;
+  let text: string;
+  let contentType: string;
+  let content: Record<string, unknown>;
+  let timestamp: Date;
 
-  const data = payload.data;
-  if (!data || !data.key) {
-    console.warn("[UazAPI] handleMessage: missing data or data.key", { hasData: !!data });
-    return;
+  if (isNativeFormat(payload)) {
+    // ── UazAPI native format ──
+    const chat = payload.chat;
+    const msg = payload.message;
+
+    console.log("[UazAPI] Native format — chat.wa_chatid:", chat?.wa_chatid,
+      "msg.messageType:", msg?.messageType, "msg.type:", msg?.type,
+      "msg.text:", (msg?.text ?? msg?.body)?.slice(0, 80));
+
+    const rawJid = chat?.wa_chatid || "";
+    phone = normalizePhone(rawJid.split("@")[0] || chat?.phone);
+    if (!phone) { console.warn("[UazAPI] Could not extract phone from chat"); return; }
+
+    // Determine direction: if message.from matches owner number → outbound
+    const ownerDigits = (chat?.owner || "").replace(/\D/g, "");
+    const fromDigits = (msg?.from || "").replace(/\D/g, "");
+    isFromMe = msg?.fromMe === true || (ownerDigits.length > 0 && fromDigits === ownerDigits);
+
+    // spec: messageid = external provider ID
+    externalMessageId = msg?.messageid ?? msg?.id ?? `native_${Date.now()}`;
+    // spec: senderName = display name; fallback to chat.name
+    pushName = msg?.senderName ?? chat?.name ?? undefined;
+    // spec: messageTimestamp (ms) or timestamp (seconds)
+    timestamp = parseTimestamp(msg?.messageTimestamp ?? msg?.timestamp);
+
+    const extracted = extractTextFromNativeMessage(msg);
+    text = extracted.text;
+    contentType = extracted.contentType;
+    content = extracted.content;
+
+  } else {
+    // ── Legacy / test format ──
+    const leg = payload as UazApiLegacyPayload;
+    const data = leg.data;
+    if (!data?.key) { console.warn("[UazAPI] Legacy format: missing data.key"); return; }
+
+    const remoteJid = data.key.remoteJid;
+    if (remoteJid.includes("@g.us") || remoteJid === "status@broadcast") return;
+
+    phone = normalizePhone(remoteJid.split("@")[0]);
+    if (!phone) { console.warn("[UazAPI] Could not normalize remoteJid:", remoteJid); return; }
+
+    isFromMe = data.key.fromMe === true;
+    externalMessageId = data.key.id;
+    pushName = data.pushName;
+    timestamp = data.messageTimestamp ? new Date(data.messageTimestamp * 1000) : new Date();
+
+    const extracted = extractTextFromLegacyData(data);
+    text = extracted.text;
+    contentType = extracted.contentType;
+    content = extracted.content;
   }
 
-  const remoteJid = data.key.remoteJid;
-
-  // Skip groups and broadcast
-  if (remoteJid.includes("@g.us")) return;
-  if (remoteJid === "status@broadcast") return;
-
-  const isFromMe = data.key.fromMe === true;
   const direction = isFromMe ? "outbound" : "inbound";
+  console.log(`[UazAPI] Processing ${direction} message from ${phone}`);
 
-  const phone = normalizeRemoteJid(remoteJid);
-  if (!phone) {
-    console.warn(`[UazAPI] Could not normalize remoteJid: ${remoteJid}`);
-    return;
-  }
-
-  const externalMessageId = data.key.id;
-  const { contentType, content } = extractMessageContent(data);
-  const messageText = extractMessageText(data);
-  const pushName = data.pushName;
-  const timestamp = data.messageTimestamp
-    ? new Date(data.messageTimestamp * 1000)
-    : new Date();
-
-  // Find existing conversation
+  // Find or create conversation
   const { data: existingConv, error: convFindErr } = await supabase
     .from("messaging_conversations")
     .select("id, contact_id")
@@ -487,43 +458,33 @@ async function handleMessage(
   if (existingConv) {
     conversationId = existingConv.id;
     contactId = existingConv.contact_id;
+    console.log(`[UazAPI] Found existing conversation: ${conversationId}`);
   } else {
     // Find or create contact
-    const { data: existingContact, error: contactLookupErr } = await supabase
+    const { data: existingContact } = await supabase
       .from("contacts")
       .select("id")
       .eq("organization_id", channel.organization_id)
       .eq("phone", phone)
       .is("deleted_at", null)
-      .order("created_at")
       .limit(1)
       .maybeSingle();
-
-    if (contactLookupErr) throw contactLookupErr;
 
     if (existingContact) {
       contactId = existingContact.id;
     } else {
-      const contactName = pushName || phone;
-
-      const { data: newContact, error: contactCreateErr } = await supabase
+      const { data: newContact, error: contactErr } = await supabase
         .from("contacts")
-        .insert({
-          organization_id: channel.organization_id,
-          name: contactName,
-          phone,
-          email: null,
-        })
+        .insert({ organization_id: channel.organization_id, name: pushName || phone, phone, email: null })
         .select("id")
         .single();
-
-      if (contactCreateErr) throw contactCreateErr;
+      if (contactErr) throw contactErr;
       contactId = newContact.id;
+      console.log(`[UazAPI] Created contact: ${contactId}`);
     }
 
-    // Create conversation. Status MUST be 'open' or 'resolved' per CHECK constraint
-    // on messaging_conversations.status (see migration 20260205100000).
-    const { data: newConv, error: convCreateErr } = await supabase
+    // Create conversation
+    const { data: newConv, error: convErr } = await supabase
       .from("messaging_conversations")
       .insert({
         organization_id: channel.organization_id,
@@ -537,10 +498,11 @@ async function handleMessage(
       .select("id")
       .single();
 
-    if (convCreateErr) throw convCreateErr;
+    if (convErr) throw convErr;
     conversationId = newConv.id;
+    console.log(`[UazAPI] Created conversation: ${conversationId}`);
 
-    // Check for lead routing
+    // Lead routing
     const routingRule = await getLeadRoutingRule(supabase, channel.id);
     if (routingRule) {
       await autoCreateDeal(supabase, {
@@ -548,122 +510,94 @@ async function handleMessage(
         contactId: contactId!,
         boardId: routingRule.boardId,
         stageId: routingRule.stageId,
-        conversationId: conversationId,
+        conversationId,
         contactName: pushName || phone,
       });
     }
   }
 
-  // Insert message. Schema notes:
-  // - column is "external_id" (not external_message_id)
-  // - status must be in {pending, queued, sent, delivered, read, failed}
-  // - inbound messages have already arrived → status "delivered"
-  // - timestamp goes into sent_at (outbound) or delivered_at (inbound)
-  const { error: msgInsertErr } = await supabase
-    .from("messaging_messages")
-    .insert({
-      conversation_id: conversationId,
-      external_id: externalMessageId,
-      direction,
-      content_type: contentType,
-      content,
-      status: isFromMe ? "sent" : "delivered",
-      sent_at: isFromMe ? timestamp.toISOString() : null,
-      delivered_at: !isFromMe ? timestamp.toISOString() : null,
-      sender_name: pushName ?? null,
-    });
+  // Insert message
+  const { error: msgErr } = await supabase.from("messaging_messages").insert({
+    conversation_id: conversationId,
+    external_id: externalMessageId,
+    direction,
+    content_type: contentType,
+    content,
+    status: isFromMe ? "sent" : "delivered",
+    sent_at: isFromMe ? timestamp.toISOString() : null,
+    delivered_at: !isFromMe ? timestamp.toISOString() : null,
+    sender_name: pushName ?? null,
+  });
 
-  if (msgInsertErr) {
-    console.error("[UazAPI] Error inserting message:", msgInsertErr);
-    throw msgInsertErr;
-  }
+  if (msgErr) { console.error("[UazAPI] Error inserting message:", msgErr); throw msgErr; }
 
-  // Update conversation last message
-  const { error: convUpdateErr } = await supabase
-    .from("messaging_conversations")
-    .update({
-      last_message_at: timestamp,
-      last_message_preview: messageText,
-    })
-    .eq("id", conversationId);
+  // Update conversation preview
+  await supabase.from("messaging_conversations").update({
+    last_message_at: timestamp,
+    last_message_preview: text,
+  }).eq("id", conversationId);
 
-  if (convUpdateErr) {
-    console.error("[UazAPI] Error updating conversation:", convUpdateErr);
-  }
-
-  // Trigger AI processing only for inbound text messages
-  if (!isFromMe && contentType === "text" && messageText) {
-    await triggerAIProcessing({
-      conversationId,
-      organizationId: channel.organization_id,
-      messageText,
-      messageId: externalMessageId,
-    });
+  // Trigger AI for inbound text
+  if (!isFromMe && contentType === "text" && text && text !== "[mensagem]") {
+    await triggerAIProcessing({ conversationId, organizationId: channel.organization_id, messageText: text, messageId: externalMessageId });
   }
 }
 
 async function handleMessageUpdate(
   supabase: ReturnType<typeof createClient>,
   channel: { id: string },
-  payload: UazApiMessagePayload
+  payload: AnyPayload
 ) {
-  const data = payload.data;
-  if (!data || !data.key || !data.key.id) return;
-  if (data.status === undefined || data.status === null) return;
-
-  const status = mapNumericStatus(data.status);
-  if (!status) {
-    console.warn(`[UazAPI] Unknown status code: ${data.status}`);
+  // Native format: status update
+  if (isNativeFormat(payload)) {
+    const msg = payload.message;
+    if (!msg?.id) return;
+    // Native format may not carry a numeric status — skip for now
+    console.log("[UazAPI] Native messages_update — msg.id:", msg.id);
     return;
   }
 
-  // Update the specific message by external_id, restricted to conversations
-  // that belong to THIS channel (avoids race where two channels could share
-  // an external id, and prevents the previous bug where conversation_id=null
-  // would update orphan messages globally).
-  const { data: convs, error: convErr } = await supabase
-    .from("messaging_conversations")
-    .select("id")
-    .eq("channel_id", channel.id);
+  // Legacy format
+  const leg = payload as UazApiLegacyPayload;
+  const data = leg.data;
+  if (!data?.key?.id || data.status === undefined || data.status === null) return;
 
-  if (convErr) {
-    console.error("[UazAPI] Error fetching conversations for status update:", convErr);
-    return;
-  }
-  if (!convs || convs.length === 0) {
-    // No conversations yet — nothing to update
-    return;
-  }
+  const statusMap: Record<string, string> = {
+    "0": "pending", "1": "sent", "2": "sent", "3": "delivered", "4": "read", "5": "played",
+    PENDING: "pending", SENT: "sent", SERVER_ACK: "sent",
+    DELIVERY_ACK: "delivered", DELIVERED: "delivered", READ: "read", PLAYED: "played",
+  };
+  const statusKey = String(data.status).toUpperCase();
+  const status = statusMap[statusKey] ?? statusMap[String(data.status)] ?? null;
+  if (!status) return;
 
-  const conversationIds = convs.map((c) => c.id);
+  const { data: convs } = await supabase.from("messaging_conversations").select("id").eq("channel_id", channel.id);
+  if (!convs?.length) return;
 
-  // Also set the matching status timestamp column
-  const statusTimestamp = new Date().toISOString();
   const updates: Record<string, unknown> = { status };
-  if (status === "delivered") updates.delivered_at = statusTimestamp;
-  else if (status === "read") updates.read_at = statusTimestamp;
-  else if (status === "sent") updates.sent_at = statusTimestamp;
-  else if (status === "failed") updates.failed_at = statusTimestamp;
+  const now = new Date().toISOString();
+  if (status === "delivered") updates.delivered_at = now;
+  else if (status === "read") updates.read_at = now;
+  else if (status === "sent") updates.sent_at = now;
 
-  const { error } = await supabase
-    .from("messaging_messages")
+  await supabase.from("messaging_messages")
     .update(updates)
     .eq("external_id", data.key.id)
-    .in("conversation_id", conversationIds);
-
-  if (error) {
-    console.error("[UazAPI] Error updating message status:", error);
-  }
+    .in("conversation_id", convs.map((c: { id: string }) => c.id));
 }
 
 async function handleConnectionUpdate(
   supabase: ReturnType<typeof createClient>,
   channel: { id: string },
-  payload: UazApiMessagePayload
+  payload: AnyPayload
 ) {
-  const data = payload.data as { state?: string } | undefined;
-  const state = data?.state ?? "close";
-  await updateChannelStatus(supabase, channel, state);
+  const p = payload as Record<string, unknown>;
+  const state = String(
+    (p.data as Record<string, unknown>)?.state ??
+    p.state ??
+    "close"
+  );
+  await updateChannelStatus(supabase, channel.id, state);
 }
 
 // =============================================================================
@@ -671,50 +605,36 @@ async function handleConnectionUpdate(
 // =============================================================================
 
 Deno.serve(async (req) => {
-  // CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
+  if (req.method !== "POST") return json(405, { error: "Método não permitido" });
 
-  if (req.method !== "POST") {
-    return json(405, { error: "Método não permitido" });
-  }
-
-  // Extract channelId from URL path
   const url = new URL(req.url);
   const uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
   const channelId = url.pathname.match(uuidRegex)?.[0] ?? null;
-  if (!channelId) {
-    return json(400, { error: "channel_id ausente na URL" });
-  }
+  if (!channelId) return json(400, { error: "channel_id ausente na URL" });
 
-  // Parse payload — log raw structure so we can see the exact UazAPI format
-  let payload: UazApiMessagePayload;
+  // Parse payload — handle both array and object
+  let payload: AnyPayload;
   try {
     const raw = await req.json();
-    // Log the raw payload BEFORE any processing (truncated to 1200 chars)
-    console.log("[UazAPI] RAW payload:", JSON.stringify(raw).slice(0, 1200));
-    // UazAPI may send an array of payloads — take the first element
-    payload = (Array.isArray(raw) ? raw[0] : raw) as UazApiMessagePayload;
+    console.log("[UazAPI] RAW top-level keys:", Object.keys(raw as object).join(", "));
+    console.log("[UazAPI] RAW EventType:", (raw as Record<string,unknown>).EventType, "event:", (raw as Record<string,unknown>).event);
+    payload = (Array.isArray(raw) ? raw[0] : raw) as AnyPayload;
   } catch {
     return json(400, { error: "JSON inválido" });
   }
 
-  // Setup Supabase client
-  const supabaseUrl =
-    Deno.env.get("CRM_SUPABASE_URL") ?? Deno.env.get("SUPABASE_URL");
+  const supabaseUrl = Deno.env.get("CRM_SUPABASE_URL") ?? Deno.env.get("SUPABASE_URL");
   const serviceKey =
     Deno.env.get("CRM_SUPABASE_SECRET_KEY") ??
     Deno.env.get("CRM_SUPABASE_SERVICE_ROLE_KEY") ??
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-  if (!supabaseUrl || !serviceKey) {
-    return json(500, { error: "Supabase não configurado no runtime" });
-  }
+  if (!supabaseUrl || !serviceKey) return json(500, { error: "Supabase não configurado" });
 
   const supabase = createClient(supabaseUrl, serviceKey);
 
-  // Fetch channel by ID
+  // Fetch channel
   const { data: channel, error: channelErr } = await supabase
     .from("messaging_channels")
     .select("id, organization_id, business_unit_id, external_identifier, status, credentials")
@@ -722,85 +642,47 @@ Deno.serve(async (req) => {
     .in("status", ["connected", "active"])
     .maybeSingle();
 
-  if (channelErr) {
-    console.error("[UazAPI] Error fetching channel:", channelErr);
-    return json(200, { ok: false, error: "Erro ao buscar canal" });
-  }
+  if (channelErr) { console.error("[UazAPI] Error fetching channel:", channelErr); return json(200, { ok: false, error: "Erro ao buscar canal" }); }
+  if (!channel) return json(200, { ok: false, error: "Canal não encontrado ou desconectado" });
 
-  if (!channel) {
-    return json(200, { ok: false, error: "Canal não encontrado" });
-  }
-
-  // Auth: verify the token provided by UazAPI matches what we expect.
-  // UazAPI sends its instance API token in the "token" header on every webhook call.
+  // Auth
   const credentials = (channel.credentials ?? {}) as Record<string, string>;
   const envSecret = (Deno.env.get("UAZAPI_WEBHOOK_SECRET") ?? "").trim();
-  // webhookSecret takes priority; fall back to the instance token (which is what
-  // UazAPI sends by default in the "token" header when no separate secret is set).
   const channelToken = (credentials.webhookSecret ?? credentials.token ?? "").trim();
   const providedKey = getTokenFromRequest(req);
 
-  console.log("[UazAPI] Auth check", {
-    channelId: channel.id,
-    hasProvidedKey: providedKey.length > 0,
-    hasEnvSecret: envSecret.length > 0,
-    hasChannelToken: channelToken.length > 0,
-    providedKeyPrefix: providedKey.slice(0, 8),
-  });
+  console.log("[UazAPI] Auth check", { channelId: channel.id, hasProvidedKey: providedKey.length > 0, hasEnvSecret: envSecret.length > 0, hasChannelToken: channelToken.length > 0, providedKeyPrefix: providedKey.slice(0, 8) });
 
-  // If no token is provided, reject. However UazAPI sometimes sends no token
-  // when the webhook was registered without an explicit secret — in that case
-  // we only reject if we do have an expected token configured.
   if (!providedKey && (envSecret || channelToken)) {
-    console.warn("[UazAPI] Webhook missing token header", { channelId: channel.id });
+    console.warn("[UazAPI] Missing token");
     return json(401, { error: "Token ausente" });
   }
-
   if (providedKey && (envSecret || channelToken)) {
     const matchesEnv = envSecret.length > 0 && timingSafeEqual(providedKey, envSecret);
     const matchesChannel = channelToken.length > 0 && timingSafeEqual(providedKey, channelToken);
-
     if (!matchesEnv && !matchesChannel) {
-      console.warn("[UazAPI] Webhook token mismatch", {
-        channelId: channel.id,
-        providedKeyPrefix: providedKey.slice(0, 8),
-        channelTokenPrefix: channelToken.slice(0, 8),
-      });
+      console.warn("[UazAPI] Token mismatch");
       return json(401, { error: "Token inválido" });
     }
   }
 
   try {
-    // Safely extract event string — payload.event might be null, array, or object
-    const rawEvent = payload.event;
-    const event = typeof rawEvent === "string" ? rawEvent.toLowerCase() : undefined;
+    const event = extractEventType(payload);
+    console.log(`[UazAPI] Event: ${event}`);
 
-    // UazAPI sends different event names depending on version/config:
-    // "message" or "messages" for new messages
-    // "messages_update", "messages.update", or "message_update" for status
-    // "connection" or "connection.update" for connection state
     if (event === "message" || event === "messages" || event === "messages.upsert") {
       await handleMessage(supabase, channel, payload);
-    } else if (
-      event === "messages_update" ||
-      event === "messages.update" ||
-      event === "message_update" ||
-      event === "message.update"
-    ) {
+    } else if (event === "messages_update" || event === "messages.update" || event === "message_update" || event === "message.update") {
       await handleMessageUpdate(supabase, channel, payload);
     } else if (event === "connection" || event === "connection.update") {
       await handleConnectionUpdate(supabase, channel, payload);
     } else {
-      console.log(`[UazAPI] Unhandled event: ${payload.event}`);
+      console.log(`[UazAPI] Unhandled event: ${event}`);
     }
 
-    return json(200, { ok: true, event: payload.event });
+    return json(200, { ok: true, event });
   } catch (error) {
     console.error("[UazAPI] Webhook processing error:", error);
-    return json(200, {
-      ok: false,
-      error: "Erro ao processar webhook",
-      details: error instanceof Error ? error.message : "Unknown error",
-    });
+    return json(200, { ok: false, error: "Erro ao processar webhook", details: error instanceof Error ? error.message : "Unknown error" });
   }
 });

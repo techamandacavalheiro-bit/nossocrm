@@ -419,11 +419,25 @@ export class UazApiWhatsAppProvider extends BaseChannelProvider {
     chatId: string,
     content: ReactionContent
   ): Promise<UazApiSendResponse> {
+    // UazAPI spec: POST /message/react { number, text (emoji), id (messageId) }
     return this.request<UazApiSendResponse>('POST', '/message/react', {
-      chatid: chatId,
-      messageId: content.messageId,
-      reaction: content.emoji,
+      number: chatId,
+      text: content.emoji,
+      id: content.messageId,
     });
+  }
+
+  async deleteMessage(externalMessageId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      // UazAPI spec: POST /message/delete { id }
+      await this.request('POST', '/message/delete', { id: externalMessageId });
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
   }
 
   // ---------------------------------------------------------------------------

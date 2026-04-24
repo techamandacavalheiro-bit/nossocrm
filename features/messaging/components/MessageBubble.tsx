@@ -2,7 +2,7 @@
 
 import React, { memo, useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
-import { Check, CheckCheck, Clock, AlertCircle, FileText, MapPin, Play, Pause, Image, Reply } from 'lucide-react';
+import { Check, CheckCheck, Clock, AlertCircle, FileText, MapPin, Play, Pause, Image, Reply, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { sanitizeUrl } from '@/lib/utils/sanitize';
 import { useSendMessage } from '@/lib/query/hooks/useMessagingMessagesQuery';
@@ -201,6 +201,15 @@ const StatusIcon = memo(function StatusIcon({ status }: { status: MessageStatus 
 const MessageContent = memo(function MessageContent({ message }: { message: MessagingMessage }) {
   const { content, contentType } = message;
   const isOutbound = message.direction === 'outbound';
+  const isDeleted = !!(message.metadata as Record<string, unknown>)?.deleted;
+
+  if (isDeleted) {
+    return (
+      <p className={cn('italic text-sm', isOutbound ? 'text-white/60' : 'text-slate-400')}>
+        🚫 Mensagem apagada
+      </p>
+    );
+  }
 
   switch (contentType) {
     case 'text': {
@@ -433,9 +442,12 @@ export const MessageBubble = memo(function MessageBubble({
   const isOutbound = message.direction === 'outbound';
   const time = format(new Date(message.createdAt), 'HH:mm');
   const { mutate: sendMessage } = useSendMessage();
+  const [isDeleting, setIsDeleting] = useState(false);
 
+  const isDeleted = !!(message.metadata as Record<string, unknown>)?.deleted;
   const reactions = (message.metadata?.reactions as Record<string, number> | undefined) ?? {};
-  const canReact = !isOutbound && !!message.externalId;
+  const canReact = !isOutbound && !!message.externalId && !isDeleted;
+  const canDelete = isOutbound && !!message.externalId && !isDeleted;
 
   // Find the message being replied to
   const repliedToMessage = message.replyToMessageId
@@ -456,6 +468,16 @@ export const MessageBubble = memo(function MessageBubble({
     },
     [message.externalId, conversationId, sendMessage],
   );
+
+  const handleDelete = useCallback(async () => {
+    if (!confirm('Apagar esta mensagem para todos?')) return;
+    setIsDeleting(true);
+    try {
+      await fetch(`/api/messaging/messages/${message.id}/delete`, { method: 'POST' });
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [message.id]);
 
   return (
     <div
@@ -546,6 +568,19 @@ export const MessageBubble = memo(function MessageBubble({
 
         {/* Emoji picker — only for inbound */}
         {canReact && <EmojiPickerButton onReact={handleReact} />}
+
+        {/* Delete button — only for outbound */}
+        {canDelete && (
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={isDeleting}
+            aria-label="Apagar mensagem"
+            className="w-7 h-7 flex items-center justify-center rounded-full text-slate-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors disabled:opacity-50"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
     </div>
   );
