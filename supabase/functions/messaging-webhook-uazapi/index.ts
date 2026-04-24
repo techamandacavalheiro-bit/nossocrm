@@ -65,11 +65,16 @@ function json(status: number, body: unknown) {
 }
 
 function getTokenFromRequest(req: Request): string {
-  // UazAPI sends the instance token in the "token" header on webhooks.
-  // Some setups also use Authorization: Bearer <token>.
+  // 1. Query param ?token= (preferred for UazAPI — they don't send headers)
+  const url = new URL(req.url);
+  const queryToken = url.searchParams.get("token") || "";
+  if (queryToken.trim()) return queryToken.trim();
+
+  // 2. "token" header
   const tokenHeader = req.headers.get("token") || "";
   if (tokenHeader.trim()) return tokenHeader.trim();
 
+  // 3. Authorization: Bearer <token>
   const auth = req.headers.get("authorization") || "";
   const match = auth.match(/^Bearer\s+(.+)$/i);
   return match ? match[1].trim() : "";
@@ -529,7 +534,7 @@ async function handleMessage(
     if (routingRule) {
       await autoCreateDeal(supabase, {
         organizationId: channel.organization_id,
-        contactId: contactId,
+        contactId: contactId!,
         boardId: routingRule.boardId,
         stageId: routingRule.stageId,
         conversationId: conversationId,
