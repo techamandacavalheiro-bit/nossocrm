@@ -688,10 +688,14 @@ Deno.serve(async (req) => {
     return json(400, { error: "channel_id ausente na URL" });
   }
 
-  // Parse payload
+  // Parse payload — log raw structure so we can see the exact UazAPI format
   let payload: UazApiMessagePayload;
   try {
-    payload = (await req.json()) as UazApiMessagePayload;
+    const raw = await req.json();
+    // Log the raw payload BEFORE any processing (truncated to 1200 chars)
+    console.log("[UazAPI] RAW payload:", JSON.stringify(raw).slice(0, 1200));
+    // UazAPI may send an array of payloads — take the first element
+    payload = (Array.isArray(raw) ? raw[0] : raw) as UazApiMessagePayload;
   } catch {
     return json(400, { error: "JSON inválido" });
   }
@@ -767,7 +771,9 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const event = payload.event?.toLowerCase();
+    // Safely extract event string — payload.event might be null, array, or object
+    const rawEvent = payload.event;
+    const event = typeof rawEvent === "string" ? rawEvent.toLowerCase() : undefined;
 
     // UazAPI sends different event names depending on version/config:
     // "message" or "messages" for new messages
