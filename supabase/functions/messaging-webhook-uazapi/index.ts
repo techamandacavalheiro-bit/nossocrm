@@ -273,18 +273,33 @@ async function downloadAndStoreMedia(
       return null;
     }
 
+    // Skip huge files that would OOM the edge function (limit: ~256MB memory).
+    // For those, return the UazAPI URL directly — it works for 2 days (uazapi retention).
+    const MAX_DOWNLOAD_SIZE = 200 * 1024 * 1024; // 200MB safety margin
+
     const fetchCtrl = new AbortController();
-    const fetchTimer = setTimeout(() => fetchCtrl.abort(), 60_000);
+    const fetchTimer = setTimeout(() => fetchCtrl.abort(), 120_000);
     let fileBuffer: ArrayBuffer;
     let resolvedMime: string;
     try {
       console.log(`[UazAPI:download] Fetching bytes from ${fileUrl.slice(0, 80)}`);
       const fileRes = await fetch(fileUrl, { signal: fetchCtrl.signal });
-      console.log(`[UazAPI:download] file fetch status=${fileRes.status} ct=${fileRes.headers.get('content-type')}`);
+      const contentLengthHeader = fileRes.headers.get('content-length');
+      const declaredSize = contentLengthHeader ? parseInt(contentLengthHeader, 10) : 0;
+      console.log(`[UazAPI:download] file fetch status=${fileRes.status} ct=${fileRes.headers.get('content-type')} size=${declaredSize}`);
+
       if (!fileRes.ok) {
         console.warn(`[UazAPI:download] File fetch failed: ${fileRes.status}`);
         return null;
       }
+
+      // If file is too large, don't load it into memory — fall back to UazAPI URL
+      if (declaredSize > 0 && declaredSize > MAX_DOWNLOAD_SIZE) {
+        console.warn(`[UazAPI:download] File too large (${declaredSize} bytes > ${MAX_DOWNLOAD_SIZE}) — using UazAPI URL directly (expires in 2 days)`);
+        fileRes.body?.cancel();
+        return fileUrl;
+      }
+
       resolvedMime = mimetype || fileRes.headers.get('content-type') || 'application/octet-stream';
       fileBuffer = await fileRes.arrayBuffer();
       console.log(`[UazAPI:download] Downloaded ${fileBuffer.byteLength} bytes (mime=${resolvedMime})`);
@@ -302,7 +317,10 @@ async function downloadAndStoreMedia(
 
     if (upErr) {
       console.error(`[UazAPI:download] STORAGE UPLOAD ERROR: ${upErr.message}`, upErr);
-      return null;
+      // Fallback: if upload failed due to size (413) or any other reason,
+      // use the UazAPI URL directly (works for 2 days per UazAPI retention)
+      console.warn(`[UazAPI:download] Falling back to UazAPI URL (temporary, 2 days)`);
+      return fileUrl;
     }
 
     const { data: urlData } = supabase.storage.from('messaging-media').getPublicUrl(storagePath);
