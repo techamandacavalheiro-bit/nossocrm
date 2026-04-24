@@ -66,8 +66,14 @@ interface DealDetailModalProps {
   onClose: () => void;
 }
 
-// Performance: reuse date formatter instance.
 const PT_BR_DATE_FORMATTER = new Intl.DateTimeFormat('pt-BR');
+
+function safeFormatDate(value: string | null | undefined): string {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '—';
+  return PT_BR_DATE_FORMATTER.format(d);
+}
 
 /**
  * Componente React `DealDetailModal`.
@@ -714,7 +720,7 @@ export const DealDetailModal: React.FC<DealDetailModalProps> = ({ dealId, isOpen
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-500">Criado em</span>
                       <span className="text-slate-900 dark:text-white">
-                        {PT_BR_DATE_FORMATTER.format(new Date(deal.createdAt))}
+                        {safeFormatDate(deal.createdAt)}
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">

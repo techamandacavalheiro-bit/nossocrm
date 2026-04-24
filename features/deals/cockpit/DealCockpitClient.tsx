@@ -335,8 +335,10 @@ function uid(prefix = 'id'): string {
   return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
 }
 
-function formatAtISO(iso: string): string {
+function formatAtISO(iso: string | null | undefined): string {
+  if (!iso) return '—';
   const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
   const dd = PT_BR_DATE_FORMATTER.format(d);
   const tt = PT_BR_TIME_FORMATTER.format(d);
   return `${dd} · ${tt}`;
