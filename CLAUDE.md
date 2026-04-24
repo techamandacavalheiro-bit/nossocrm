@@ -491,6 +491,114 @@ contacts: {
 }
 ```
 
+## AI Copilot (Messaging)
+
+The messaging module has a **Sales Copilot** that helps the human attendant. **The AI never sends messages directly** — it only suggests, and the attendant always reviews/edits before sending.
+
+### Components
+
+| Layer | File | Purpose |
+|---|---|---|
+| **Backend** | `app/api/messaging/ai/copilot/route.ts` | Single endpoint, 4 actions discriminated by `action` param |
+| **Backend** | `app/api/messaging/ai/improve/route.ts` | Rewrites attendant's draft in 5 tones |
+| **Backend** | `app/api/messaging/ai/suggest-replies/route.ts` | Quick suggestions (used by `Sparkles` button in MessageInput) |
+| **Backend** | `app/api/settings/ai/validate-key/route.ts` | Validates Gemini API key server-side (avoids browser CORS) |
+| **UI** | `features/messaging/components/CopilotPanel.tsx` | Side modal with 4 tabs: Sugerir / Analisar / Objeção / Perguntar |
+| **UI** | `features/messaging/components/MessageInput.tsx` | Hosts the `Wand2` (improve) and `Sparkles` (quick suggest) buttons |
+| **Hooks** | `lib/query/hooks/useAiCopilot.ts` | `useCopilot()` mutation |
+| **Hooks** | `lib/query/hooks/useAiSuggestReplies.ts` | `useSuggestReplies()` mutation |
+| **Hooks** | `lib/query/hooks/useImproveDraft.ts` | `useImproveDraft()` mutation with `tone` enum |
+
+### Sales script (per-org system prompt)
+
+- Stored in `organization_settings.sales_script` (TEXT, markdown).
+- Edited by admin in **Settings → AI → "✨ Script de Vendas (Copiloto)"**.
+- Injected as system prompt in **all** copilot actions (suggest/analyze/objection/ask + improve).
+- Falls back to a generic default if not set.
+
+### Context fed to the AI
+
+Every copilot call loads:
+1. `sales_script` from `organization_settings`
+2. Last 20 messages from `messaging_messages` (text + media summaries like `[IMAGEM]`, `[ÁUDIO]`)
+3. Contact info from `contacts` (name, email, phone, status, stage, tags, ltv)
+4. Up to 5 active deals for that contact (title, value)
+5. For improve: last 10 messages only (lighter, faster)
+
+### Improve tones
+
+`useImproveDraft({ tone })` accepts:
+- `general` — grammar/clarity polish
+- `professional` — formal, no slang
+- `casual` — light WhatsApp-style
+- `shorter` — max 2 sentences
+- `empathetic` — acknowledge feelings first
+
+The `MessageInput` shows a `Wand2` button only when `text.trim().length > 0`. Click opens a popover with the 5 options. After rewriting, a "Texto reescrito pela IA — Desfazer" banner appears (manual edit clears the undo state).
+
+### Important constraints
+
+- **CSRF**: all AI endpoints check `isAllowedOrigin(req)` (cookies-only auth)
+- **Org isolation**: every query filters by `organization_id` via the user's profile
+- **Key fallback**: if `model` field is empty, backend uses `AI_DEFAULT_MODELS.google` (= `gemini-2.0-flash`)
+- **Schema validation**: all `generateObject` calls use Zod — guarantees structured output, no hallucinated formats
+- **AI provider**: currently Gemini-only via `lib/ai/config.ts > getModel()` (uses `@ai-sdk/google` from Vercel AI SDK v6)
+
+## UazAPI WhatsApp Integration
+
+Self-hosted WhatsApp via UazAPI. Edge function lives in Supabase, app integration in `lib/messaging/providers/whatsapp/uazapi.provider.ts`.
+
+### Critical field naming (UazAPI ≠ generic spec)
+
+The `/send/text`, `/send/media`, `/send/location` and `/message/react` endpoints use **non-obvious field names** — wrong names cause silent failures (the API returns 200 but the message is dropped or returns a different ID format that breaks reactions/deletes).
+
+| Endpoint | Field | NOT |
+|---|---|---|
+| `/send/text` | `number` | `chatid` |
+| `/send/text` | `text` | `body` |
+| `/send/media` | `number` | `chatid` |
+| `/send/media` | `type` | `mediatype` |
+| `/send/media` | `file` | `media` |
+| `/send/media` | `text` (caption) | `caption` |
+| `/send/media` | `docName` | `fileName` |
+| `/message/react` | `number` | `chatid` |
+| `/message/react` | `text` (emoji) | `reaction` |
+| `/message/react` | `id` | `messageId` |
+| Response | `messageid` | `key.id` |
+
+When sending: cast to `number` even when value is a JID like `5544998685747@s.whatsapp.net` — UazAPI accepts both.
+
+### Inbound media: download flow
+
+UazAPI webhooks for media (image/audio/video/document/sticker) usually arrive **without** a `fileURL` (or with a relative path). The edge function handles this:
+
+1. `extractTextFromNativeMessage()` only keeps full http(s) URLs from the webhook.
+2. If `fileURL` is empty, after creating the conversation, the edge function calls `getMediaUrlFromUazApi()` which POSTs to `${BaseUrl}/message/download` with `{ id, return_link: true, generate_mp3: true }`.
+3. The returned UazAPI public URL is stored as `content.mediaUrl`.
+
+**Trade-off (intentional)**: we do NOT re-upload to Supabase Storage — the previous attempts were too brittle (bucket size limits, MIME restrictions, edge-function OOM on large videos). The UazAPI URL is valid for **~2 days** (UazAPI's retention window). Acceptable for CRM context where conversations are usually actioned within that window.
+
+### AI trigger guard
+
+The webhook only triggers `triggerAIProcessing()` for **real text** from the customer:
+
+```typescript
+const isPlaceholder = text.startsWith('[');
+if (!isFromMe && contentType === "text" && text && !isPlaceholder) {
+  await triggerAIProcessing({ ... });
+}
+```
+
+This prevents the AI from receiving placeholders like `[figurinha]`, `[áudio]`, `[reactionmessage]` and replying with confused error messages. New non-text WhatsApp types (poll, contact, view-once, etc.) get a clean placeholder via dedicated handlers in `extractTextFromNativeMessage`.
+
+### Media bucket (`messaging-media`)
+
+Created via migration `20260210100002_create_messaging_media_bucket.sql`, expanded MIME types in `20260424000000_*` and bumped to 500 MB in `20260424010000_*`. **Public read** (UazAPI fetches files from our storage when sending outbound media). Folder structure: `{organization_id}/{conversation_id}/{file}.{ext}`.
+
+### Outbound flow (presigned upload)
+
+`POST /api/messaging/media/upload` does NOT receive the file. It returns a **signed upload URL** so the browser PUTs the file directly to Supabase Storage. This bypasses Vercel's 4.5 MB serverless body limit. After upload, the public URL goes into the message content sent to UazAPI's `/send/media`.
+
 ## References
 
 - **Architecture Decision:** See `AGENTS.md` for code style and cache rules
