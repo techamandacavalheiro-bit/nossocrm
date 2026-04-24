@@ -87,8 +87,7 @@ export function useConversations(filters?: ConversationFilters) {
             id,
             name,
             email,
-            phone,
-            ai_paused
+            phone
           ),
           assigned_user:profiles!assigned_user_id (
             id,
@@ -137,7 +136,7 @@ export function useConversations(filters?: ConversationFilters) {
       const result = (data || []).map((row): ConversationView => {
         const base = transform(row as DbMessagingConversation);
         const channel = row.channel as { id: string; name: string; channel_type: string; provider: string } | null;
-        const contact = row.contact as { id: string; name: string; email: string; phone: string; ai_paused?: boolean } | null;
+        const contact = row.contact as { id: string; name: string; email: string; phone: string } | null;
         const assignedUser = row.assigned_user as { id: string; name: string; avatar_url: string } | null;
 
         return {
@@ -147,7 +146,7 @@ export function useConversations(filters?: ConversationFilters) {
           contactName: contact?.name,
           contactEmail: contact?.email,
           contactPhone: contact?.phone,
-          contactAiPaused: contact?.ai_paused ?? false,
+          contactAiPaused: (base.metadata?.ai_paused === true),
           assignedUserName: assignedUser?.name,
           assignedUserAvatar: assignedUser?.avatar_url,
           isWindowExpired: checkWindowExpired(base, channel?.provider),
@@ -196,8 +195,7 @@ export function useConversation(conversationId: string | undefined) {
             id,
             name,
             email,
-            phone,
-            ai_paused
+            phone
           ),
           assigned_user:profiles!assigned_user_id (
             id,
@@ -213,7 +211,7 @@ export function useConversation(conversationId: string | undefined) {
 
       const base = transform(data as DbMessagingConversation);
       const channel = data.channel as { id: string; name: string; channel_type: string; provider: string } | null;
-      const contact = data.contact as { id: string; name: string; email: string; phone: string; ai_paused?: boolean } | null;
+      const contact = data.contact as { id: string; name: string; email: string; phone: string } | null;
       const assignedUser = data.assigned_user as { id: string; name: string; avatar_url: string } | null;
 
       return {
@@ -223,7 +221,7 @@ export function useConversation(conversationId: string | undefined) {
         contactName: contact?.name,
         contactEmail: contact?.email,
         contactPhone: contact?.phone,
-        contactAiPaused: contact?.ai_paused ?? false,
+        contactAiPaused: (base.metadata?.ai_paused === true),
         assignedUserName: assignedUser?.name,
         assignedUserAvatar: assignedUser?.avatar_url,
         isWindowExpired: checkWindowExpired(base, channel?.provider),
