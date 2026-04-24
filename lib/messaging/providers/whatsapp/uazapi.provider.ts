@@ -188,6 +188,7 @@ export class UazApiWhatsAppProvider extends BaseChannelProvider {
 
       switch (status) {
         case 'open':
+        case 'connected':
           return {
             status: 'connected',
             message: 'Connected to WhatsApp',
@@ -200,6 +201,7 @@ export class UazApiWhatsAppProvider extends BaseChannelProvider {
           };
 
         case 'close':
+        case 'disconnected':
           return {
             status: 'disconnected',
             message: 'Not connected. Scan QR code to connect.',
@@ -567,7 +569,9 @@ export class UazApiWhatsAppProvider extends BaseChannelProvider {
 
     const stateToChannelStatus: Record<string, 'connected' | 'disconnected' | 'error'> = {
       open: 'connected',
+      connected: 'connected',
       close: 'disconnected',
+      disconnected: 'disconnected',
       refused: 'error',
     };
 
