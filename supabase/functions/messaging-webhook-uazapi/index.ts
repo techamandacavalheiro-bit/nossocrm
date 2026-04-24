@@ -300,6 +300,9 @@ function extractTextFromNativeMessage(
   const isDocument = rawType === "documentmessage" || rawType === "document";
   const isLocation = rawType === "locationmessage" || rawType === "location";
   const isSticker = rawType === "stickermessage" || rawType === "sticker";
+  const isReaction = rawType === "reactionmessage" || rawType === "reaction";
+  const isContact = rawType === "contactmessage" || rawType === "contactsarraymessage" || rawType === "contact";
+  const isPoll = rawType === "pollcreationmessage" || rawType === "poll";
 
   if (isImage) {
     const caption = msg.caption ?? msgText;
@@ -336,6 +339,15 @@ function extractTextFromNativeMessage(
   }
   if (isSticker) {
     return { text: "[figurinha]", contentType: "sticker", content: { type: "sticker", mediaUrl: fileUrl } };
+  }
+  if (isReaction) {
+    return { text: "[reação]", contentType: "reaction", content: { type: "reaction", emoji: msgText || '' } };
+  }
+  if (isContact) {
+    return { text: "[contato]", contentType: "contact", content: { type: "contact" } };
+  }
+  if (isPoll) {
+    return { text: "[enquete]", contentType: "poll", content: { type: "poll" } };
   }
   if (isText) {
     const finalText = msgText || "[mensagem]";
@@ -665,9 +677,15 @@ async function handleMessage(
     last_message_preview: text,
   }).eq("id", conversationId);
 
-  // Trigger AI for inbound text
-  if (!isFromMe && contentType === "text" && text && text !== "[mensagem]") {
+  // Trigger AI for inbound text only.
+  // Skip placeholders (text starts with '[') — these come from non-text content
+  // types we couldn't fully parse (stickers, reactions, polls, view-once, etc.)
+  // and would make the AI reply with confused/error messages.
+  const isPlaceholder = text.startsWith('[');
+  if (!isFromMe && contentType === "text" && text && !isPlaceholder) {
     await triggerAIProcessing({ conversationId, organizationId: channel.organization_id, messageText: text, messageId: externalMessageId });
+  } else if (!isFromMe && contentType === "text" && isPlaceholder) {
+    console.log(`[UazAPI] Skipping AI trigger for placeholder text: "${text}"`);
   }
 }
 
