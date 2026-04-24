@@ -114,6 +114,17 @@ export const AIConfigSection: React.FC = () => {
         }
     };
 
+    // Quando o usuário foca no input, se o conteúdo atual for a mask
+    // (bullets da chave salva), limpa tudo para ele colar a nova sem
+    // concatenar em cima das bolinhas.
+    const handleKeyFocus = () => {
+        if (localApiKey.includes('•')) {
+            setLocalApiKey('');
+            setValidationStatus('idle');
+            setValidationError(null);
+        }
+    };
+
     const handleSaveApiKey = async () => {
         if (!localApiKey.trim()) {
             showToast('Digite uma chave de API', 'error');
@@ -325,6 +336,7 @@ export const AIConfigSection: React.FC = () => {
                                 type="password"
                                 value={localApiKey}
                                 onChange={(e) => handleKeyChange(e.target.value)}
+                                onFocus={handleKeyFocus}
                                 placeholder="Cole sua chave AIza..."
                                 className={`w-full bg-slate-50 dark:bg-slate-800 border rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none transition-all font-mono ${validationStatus === 'invalid'
                                         ? 'border-red-300 dark:border-red-500/50'
