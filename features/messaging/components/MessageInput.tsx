@@ -10,7 +10,7 @@ declare global {
     flush(): Int8Array;
   }};
 }
-import { Send, Paperclip, Smile, Clock, FileText, X, Loader2, Image, File as FileIcon, Mic, Square, Reply, Sparkles, RefreshCw } from 'lucide-react';
+import { Send, Paperclip, Smile, Clock, FileText, X, Loader2, Image, File as FileIcon, Mic, Square, Reply, Sparkles, RefreshCw, Wand2, Briefcase, Coffee, Minimize2, Heart } from 'lucide-react';
 import EmojiPicker, { type EmojiClickData, Theme } from 'emoji-picker-react';
 import { cn } from '@/lib/utils';
 import { useSendTextMessage, useSendMessage } from '@/lib/query/hooks/useMessagingMessagesQuery';
@@ -18,6 +18,7 @@ import { useAssignConversation } from '@/lib/query/hooks/useConversationsQuery';
 import { useAuth } from '@/context/AuthContext';
 import { useMediaUploadMutation } from '@/lib/query/hooks/useMediaUploadMutation';
 import { useSuggestReplies } from '@/lib/query/hooks/useAiSuggestReplies';
+import { useImproveDraft, type ImproveTone } from '@/lib/query/hooks/useImproveDraft';
 import {
   useApprovedTemplatesQuery,
   useSendTemplateMutation,
@@ -149,8 +150,67 @@ export function MessageInput({ conversation, replyTo, onCancelReply, prefillText
   const { mutate: sendTemplate, isPending: isSendingTemplate } = useSendTemplateMutation();
   const { mutate: assignConversation } = useAssignConversation();
   const suggestReplies = useSuggestReplies();
+  const improveDraft = useImproveDraft();
   const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
   const [aiSuggestionsError, setAiSuggestionsError] = useState<string | null>(null);
+  const [improveError, setImproveError] = useState<string | null>(null);
+  const [improveMenuOpen, setImproveMenuOpen] = useState(false);
+  const [previousDraft, setPreviousDraft] = useState<string | null>(null);
+  const improveMenuRef = useRef<HTMLDivElement>(null);
+
+  // Fecha o menu Melhorar ao clicar fora
+  useEffect(() => {
+    if (!improveMenuOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (improveMenuRef.current && !improveMenuRef.current.contains(e.target as Node)) {
+        setImproveMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [improveMenuOpen]);
+
+  const handleImprove = useCallback((tone: ImproveTone) => {
+    const currentDraft = text.trim();
+    if (!currentDraft) return;
+    setImproveMenuOpen(false);
+    setImproveError(null);
+    setPreviousDraft(currentDraft);
+    improveDraft.mutate(
+      { conversationId: conversation.id, draft: currentDraft, tone },
+      {
+        onSuccess: (improved) => {
+          setText(improved);
+          requestAnimationFrame(() => {
+            const ta = textareaRef.current;
+            if (ta) {
+              ta.focus();
+              ta.style.height = 'auto';
+              ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+              ta.setSelectionRange(improved.length, improved.length);
+            }
+          });
+        },
+        onError: (err) => {
+          setImproveError(err instanceof Error ? err.message : 'Falha ao melhorar');
+        },
+      }
+    );
+  }, [text, conversation.id, improveDraft]);
+
+  const handleUndoImprove = useCallback(() => {
+    if (previousDraft == null) return;
+    setText(previousDraft);
+    setPreviousDraft(null);
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (ta) {
+        ta.focus();
+        ta.style.height = 'auto';
+        ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+      }
+    });
+  }, [previousDraft]);
 
   const handleRequestSuggestions = useCallback(() => {
     setAiSuggestionsError(null);
@@ -514,7 +574,9 @@ export function MessageInput({ conversation, replyTo, onCancelReply, prefillText
     textarea.style.height = 'auto';
     const newHeight = Math.min(textarea.scrollHeight, 120);
     textarea.style.height = newHeight + 'px';
-  }, []);
+    // Editou manualmente — descarta o "desfazer melhoria" (não faz mais sentido)
+    if (previousDraft != null) setPreviousDraft(null);
+  }, [previousDraft]);
 
   // Converting state — shown while webm → mp3 encoding runs
   if (isConverting) {
@@ -681,6 +743,42 @@ export function MessageInput({ conversation, replyTo, onCancelReply, prefillText
         </div>
       )}
 
+      {/* Faixa "Texto melhorado pela IA — Desfazer" */}
+      {previousDraft != null && !improveDraft.isPending && (
+        <div className="px-4 pt-2">
+          <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-500/30">
+            <div className="flex items-center gap-2 text-xs text-purple-700 dark:text-purple-300">
+              <Wand2 className="w-3.5 h-3.5" />
+              Texto reescrito pela IA
+            </div>
+            <button
+              type="button"
+              onClick={handleUndoImprove}
+              className="text-xs font-medium text-purple-700 dark:text-purple-300 hover:underline"
+            >
+              Desfazer
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Erro de "Melhorar" */}
+      {improveError && (
+        <div className="px-4 pt-2">
+          <div className="px-3 py-1.5 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-500/30 text-xs text-red-700 dark:text-red-300 flex items-center justify-between gap-2">
+            <span>{improveError}</span>
+            <button
+              type="button"
+              onClick={() => setImproveError(null)}
+              className="text-red-700 dark:text-red-300 hover:opacity-70"
+              aria-label="Fechar erro"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* AI Copilot — sugestões de resposta */}
       {(aiSuggestions.length > 0 || aiSuggestionsError) && (
         <div className="px-4 pt-3 pb-1">
@@ -794,6 +892,80 @@ export function MessageInput({ conversation, replyTo, onCancelReply, prefillText
                 />
               </div>
             )}
+
+            {/* Melhorar texto (visível só quando há rascunho) */}
+            {text.trim().length > 0 && (
+              <div ref={improveMenuRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setImproveMenuOpen((v) => !v)}
+                  disabled={improveDraft.isPending || isDisabled}
+                  className={cn(
+                    'p-2 rounded-xl transition-colors',
+                    improveDraft.isPending || improveMenuOpen
+                      ? 'text-purple-500'
+                      : 'text-slate-400 hover:text-purple-500',
+                    'disabled:opacity-50 disabled:cursor-not-allowed',
+                  )}
+                  title="Melhorar texto com IA"
+                  aria-label="Melhorar texto com IA"
+                >
+                  {improveDraft.isPending
+                    ? <Loader2 className="w-5 h-5 animate-spin" />
+                    : <Wand2 className="w-5 h-5" />}
+                </button>
+                {improveMenuOpen && (
+                  <div className="absolute bottom-full right-0 mb-2 z-50 w-56 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden">
+                    <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-700 bg-purple-50 dark:bg-purple-950/30">
+                      <p className="text-[10px] uppercase tracking-wider font-semibold text-purple-700 dark:text-purple-300">
+                        Melhorar com IA
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleImprove('general')}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors"
+                    >
+                      <Sparkles className="w-4 h-4 text-purple-500" />
+                      Melhorar (geral)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleImprove('professional')}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors"
+                    >
+                      <Briefcase className="w-4 h-4 text-blue-500" />
+                      Mais profissional
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleImprove('casual')}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors"
+                    >
+                      <Coffee className="w-4 h-4 text-amber-500" />
+                      Mais casual
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleImprove('shorter')}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors"
+                    >
+                      <Minimize2 className="w-4 h-4 text-emerald-500" />
+                      Mais curto
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleImprove('empathetic')}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors"
+                    >
+                      <Heart className="w-4 h-4 text-rose-500" />
+                      Mais empático
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             <button
               type="button"
               onClick={handleRequestSuggestions}
