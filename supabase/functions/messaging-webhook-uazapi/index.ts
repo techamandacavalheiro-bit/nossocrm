@@ -505,15 +505,18 @@ async function handleMessage(
       contactId = newContact.id;
     }
 
-    // Create conversation
+    // Create conversation. Status MUST be 'open' or 'resolved' per CHECK constraint
+    // on messaging_conversations.status (see migration 20260205100000).
     const { data: newConv, error: convCreateErr } = await supabase
       .from("messaging_conversations")
       .insert({
         organization_id: channel.organization_id,
         channel_id: channel.id,
+        business_unit_id: channel.business_unit_id,
         contact_id: contactId,
         external_contact_id: phone,
-        status: "active",
+        external_contact_name: pushName || phone,
+        status: "open",
       })
       .select("id")
       .single();
@@ -535,19 +538,23 @@ async function handleMessage(
     }
   }
 
-  // Insert message
+  // Insert message. Schema notes:
+  // - column is "external_id" (not external_message_id)
+  // - status must be in {pending, queued, sent, delivered, read, failed}
+  // - inbound messages have already arrived → status "delivered"
+  // - timestamp goes into sent_at (outbound) or delivered_at (inbound)
   const { error: msgInsertErr } = await supabase
     .from("messaging_messages")
     .insert({
-      organization_id: channel.organization_id,
       conversation_id: conversationId,
-      external_message_id: externalMessageId,
+      external_id: externalMessageId,
       direction,
       content_type: contentType,
       content,
-      text_preview: messageText,
-      status: isFromMe ? "sent" : "received",
-      received_at: timestamp,
+      status: isFromMe ? "sent" : "delivered",
+      sent_at: isFromMe ? timestamp.toISOString() : null,
+      delivered_at: !isFromMe ? timestamp.toISOString() : null,
+      sender_name: pushName ?? null,
     });
 
   if (msgInsertErr) {
@@ -594,10 +601,10 @@ async function handleMessageUpdate(
     return;
   }
 
-  // Update the specific message by external_message_id, restricted to
-  // conversations that belong to THIS channel (avoids race where two
-  // channels could share an external id, and prevents the previous bug
-  // where conversation_id=null would update orphan messages globally).
+  // Update the specific message by external_id, restricted to conversations
+  // that belong to THIS channel (avoids race where two channels could share
+  // an external id, and prevents the previous bug where conversation_id=null
+  // would update orphan messages globally).
   const { data: convs, error: convErr } = await supabase
     .from("messaging_conversations")
     .select("id")
@@ -614,10 +621,18 @@ async function handleMessageUpdate(
 
   const conversationIds = convs.map((c) => c.id);
 
+  // Also set the matching status timestamp column
+  const statusTimestamp = new Date().toISOString();
+  const updates: Record<string, unknown> = { status };
+  if (status === "delivered") updates.delivered_at = statusTimestamp;
+  else if (status === "read") updates.read_at = statusTimestamp;
+  else if (status === "sent") updates.sent_at = statusTimestamp;
+  else if (status === "failed") updates.failed_at = statusTimestamp;
+
   const { error } = await supabase
     .from("messaging_messages")
-    .update({ status })
-    .eq("external_message_id", data.key.id)
+    .update(updates)
+    .eq("external_id", data.key.id)
     .in("conversation_id", conversationIds);
 
   if (error) {
