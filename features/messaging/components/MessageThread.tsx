@@ -55,9 +55,12 @@ export function MessageThread({ conversationId, presenceStatus, onReply }: Messa
   const isLoadingOlderRef = useRef(false);
 
   // Flatten pages into single message array (chronological order).
+  // pages[0] holds the MOST RECENT batch and pages[N] holds the OLDEST batch
+  // (fetchNextPage appends each older batch to the end of the array).
+  // Reverse the page order so older messages render at the top and newer at the bottom.
   // Filter out reaction messages — they are displayed as pills on the target
   // message bubble, not as standalone bubbles in the thread.
-  const messages = (data?.pages.flatMap((p) => p.messages) ?? []).filter(
+  const messages = ([...(data?.pages ?? [])].reverse().flatMap((p) => p.messages)).filter(
     (m) => m.contentType !== 'reaction',
   );
 

@@ -689,35 +689,66 @@ async function handleMessage(
   }
 }
 
+const STATUS_MAP: Record<string, string> = {
+  "0": "pending", "1": "sent", "2": "sent", "3": "delivered", "4": "read", "5": "played",
+  PENDING: "pending", SENT: "sent", SERVER_ACK: "sent",
+  DELIVERY_ACK: "delivered", DELIVERED: "delivered", READ: "read", PLAYED: "played",
+  ERROR: "failed", FAILED: "failed",
+};
+
+function mapUazStatus(raw: unknown): string | null {
+  if (raw === undefined || raw === null) return null;
+  const asKey = String(raw).toUpperCase();
+  return STATUS_MAP[asKey] ?? STATUS_MAP[String(raw)] ?? null;
+}
+
 async function handleMessageUpdate(
   supabase: ReturnType<typeof createClient>,
   channel: { id: string },
   payload: AnyPayload
 ) {
-  // Native format: status update
+  let externalMessageId: string | undefined;
+  let rawStatus: unknown;
+
   if (isNativeFormat(payload)) {
-    const msg = payload.message;
-    if (!msg?.id) return;
-    // Native format may not carry a numeric status — skip for now
-    console.log("[UazAPI] Native messages_update — msg.id:", msg.id);
+    // Native format: extract id + status from any of the common locations.
+    // UazAPI native messages_update payloads can carry the new state under
+    // message.status, message.ack, or top-level status — handle them all.
+    const msg = payload.message ?? {};
+    const top = payload as Record<string, unknown>;
+    externalMessageId = msg.messageid ?? msg.id;
+    rawStatus =
+      (msg as Record<string, unknown>).status ??
+      (msg as Record<string, unknown>).ack ??
+      (msg as Record<string, unknown>).messageStatus ??
+      top.status ??
+      top.ack;
+
+    console.log("[UazAPI] Native messages_update", {
+      externalMessageId,
+      rawStatus,
+      messageKeys: Object.keys(msg).join(","),
+      topKeys: Object.keys(top).join(","),
+    });
+  } else {
+    const leg = payload as UazApiLegacyPayload;
+    const data = leg.data;
+    externalMessageId = data?.key?.id;
+    rawStatus = data?.status;
+  }
+
+  if (!externalMessageId) return;
+
+  const status = mapUazStatus(rawStatus);
+  if (!status) {
+    console.log("[UazAPI] messages_update — unmapped status, skipping:", rawStatus);
     return;
   }
 
-  // Legacy format
-  const leg = payload as UazApiLegacyPayload;
-  const data = leg.data;
-  if (!data?.key?.id || data.status === undefined || data.status === null) return;
-
-  const statusMap: Record<string, string> = {
-    "0": "pending", "1": "sent", "2": "sent", "3": "delivered", "4": "read", "5": "played",
-    PENDING: "pending", SENT: "sent", SERVER_ACK: "sent",
-    DELIVERY_ACK: "delivered", DELIVERED: "delivered", READ: "read", PLAYED: "played",
-  };
-  const statusKey = String(data.status).toUpperCase();
-  const status = statusMap[statusKey] ?? statusMap[String(data.status)] ?? null;
-  if (!status) return;
-
-  const { data: convs } = await supabase.from("messaging_conversations").select("id").eq("channel_id", channel.id);
+  const { data: convs } = await supabase
+    .from("messaging_conversations")
+    .select("id")
+    .eq("channel_id", channel.id);
   if (!convs?.length) return;
 
   const updates: Record<string, unknown> = { status };
@@ -725,11 +756,19 @@ async function handleMessageUpdate(
   if (status === "delivered") updates.delivered_at = now;
   else if (status === "read") updates.read_at = now;
   else if (status === "sent") updates.sent_at = now;
+  else if (status === "failed") updates.failed_at = now;
 
-  await supabase.from("messaging_messages")
+  const { error: updErr } = await supabase
+    .from("messaging_messages")
     .update(updates)
-    .eq("external_id", data.key.id)
+    .eq("external_id", externalMessageId)
     .in("conversation_id", convs.map((c: { id: string }) => c.id));
+
+  if (updErr) {
+    console.error("[UazAPI] messages_update failed:", updErr.message);
+  } else {
+    console.log(`[UazAPI] messages_update applied: ${externalMessageId} → ${status}`);
+  }
 }
 
 async function handleConnectionUpdate(

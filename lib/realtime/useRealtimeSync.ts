@@ -248,14 +248,16 @@ export function useRealtimeSync(
                   const alreadyInCache = cachedData?.pages.some((p) => p.messages.some((m) => m.id === messageId));
 
                   if (!alreadyInCache) {
-                    // Outbound from phone/webhook — inject into cache just like inbound
+                    // Outbound from phone/webhook — inject into cache just like inbound.
+                    // pages[0] holds the MOST RECENT messages (DB fetches desc, then reverses).
+                    // The newest message must go to pages[0], not pages[pages.length - 1] (oldest page).
                     const newMessage = transformMessage(newRecord as unknown as DbMessagingMessage);
                     queryClient.setQueryData<InfiniteData<{ messages: MessagingMessage[]; nextCursor: string | null }>>(
                       infiniteKey,
                       (old) => {
                         if (!old) return old;
                         const pages = old.pages.map((page, i) => {
-                          if (i !== old.pages.length - 1) return page;
+                          if (i !== 0) return page;
                           if (page.messages.some((m) => m.id === newMessage.id)) return page;
                           return { ...page, messages: [...page.messages, newMessage] };
                         });
@@ -301,10 +303,13 @@ export function useRealtimeSync(
                   infiniteKey,
                   (old) => {
                     if (!old) return old;
-                    // Append to the last page (most recent messages page).
-                    // MessageThread reverses the order, so appending here is correct.
+                    // pages[0] holds the MOST RECENT messages (DB fetches desc, then reverses).
+                    // The newest message must go to pages[0], not pages[pages.length - 1]
+                    // (the oldest page loaded via fetchNextPage). Otherwise the message gets
+                    // injected into an older batch and disappears from view when the user has
+                    // scrolled up to load older messages.
                     const pages = old.pages.map((page, i) => {
-                      if (i !== old.pages.length - 1) return page;
+                      if (i !== 0) return page;
                       // Deduplicate: skip if message already in cache
                       if (page.messages.some((m) => m.id === newMessage.id)) return page;
                       return { ...page, messages: [...page.messages, newMessage] };
