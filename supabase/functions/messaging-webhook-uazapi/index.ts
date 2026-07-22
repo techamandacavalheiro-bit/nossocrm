@@ -432,6 +432,8 @@ async function autoCreateDeal(
     stageId?: string | null;
     conversationId: string;
     contactName: string;
+    channelId?: string;
+    channelName?: string;
   }
 ) {
   try {
@@ -448,6 +450,25 @@ async function autoCreateDeal(
       stageId = firstStage.id;
     }
 
+    // Com múltiplos números caindo no mesmo funil, o mesmo contato falando em
+    // dois canais geraria dois cards. Um negócio aberto por contato/board basta.
+    const { data: dealAberto } = await supabase
+      .from("deals")
+      .select("id")
+      .eq("organization_id", params.organizationId)
+      .eq("board_id", params.boardId)
+      .eq("contact_id", params.contactId)
+      .eq("is_won", false)
+      .eq("is_lost", false)
+      .is("deleted_at", null)
+      .limit(1)
+      .maybeSingle();
+
+    if (dealAberto) {
+      console.log(`[UazAPI] Deal já aberto para o contato (${dealAberto.id}) — não duplica`);
+      return;
+    }
+
     const { data: newDeal, error: dealErr } = await supabase
       .from("deals")
       .insert({
@@ -455,7 +476,8 @@ async function autoCreateDeal(
         board_id: params.boardId,
         stage_id: stageId,
         contact_id: params.contactId,
-        title: `${params.contactName} - WhatsApp`,
+        channel_id: params.channelId ?? null,
+        title: `${params.contactName} - ${params.channelName ?? "WhatsApp"}`,
         value: 0,
       })
       .select("id")
@@ -582,7 +604,13 @@ async function handleMessage(
     } else {
       const { data: newContact, error: contactErr } = await supabase
         .from("contacts")
-        .insert({ organization_id: channel.organization_id, name: pushName || phone, phone, email: null })
+        .insert({
+          organization_id: channel.organization_id,
+          name: pushName || phone,
+          phone,
+          email: null,
+          source: (channel.name as string | undefined) ?? "WhatsApp",
+        })
         .select("id")
         .single();
       if (contactErr) throw contactErr;
@@ -619,6 +647,8 @@ async function handleMessage(
         stageId: routingRule.stageId,
         conversationId,
         contactName: pushName || phone,
+        channelId: channel.id,
+        channelName: (channel.name as string | undefined) ?? undefined,
       });
     }
   }
@@ -822,7 +852,7 @@ Deno.serve(async (req) => {
   // Fetch channel
   const { data: channel, error: channelErr } = await supabase
     .from("messaging_channels")
-    .select("id, organization_id, business_unit_id, external_identifier, status, credentials")
+    .select("id, organization_id, business_unit_id, external_identifier, name, status, credentials")
     .eq("id", channelId)
     .in("status", ["connected", "active"])
     .maybeSingle();

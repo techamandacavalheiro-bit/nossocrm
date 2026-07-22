@@ -81,7 +81,8 @@ export function useConversations(filters?: ConversationFilters) {
             id,
             name,
             channel_type,
-            provider
+            provider,
+            settings
           ),
           contact:contacts!contact_id (
             id,
@@ -135,7 +136,7 @@ export function useConversations(filters?: ConversationFilters) {
       // Transform to ConversationView
       const result = (data || []).map((row): ConversationView => {
         const base = transform(row as DbMessagingConversation);
-        const channel = row.channel as { id: string; name: string; channel_type: string; provider: string } | null;
+        const channel = row.channel as { id: string; name: string; channel_type: string; provider: string; settings?: { color?: string; short?: string } } | null;
         const contact = row.contact as { id: string; name: string; email: string; phone: string } | null;
         const assignedUser = row.assigned_user as { id: string; name: string; avatar_url: string } | null;
 
@@ -143,6 +144,8 @@ export function useConversations(filters?: ConversationFilters) {
           ...base,
           channelType: (channel?.channel_type || 'whatsapp') as ConversationView['channelType'],
           channelName: channel?.name || 'Canal',
+          channelColor: channel?.settings?.color,
+          channelShortName: channel?.settings?.short,
           contactName: contact?.name,
           contactEmail: contact?.email,
           contactPhone: contact?.phone,
@@ -189,7 +192,8 @@ export function useConversation(conversationId: string | undefined) {
             id,
             name,
             channel_type,
-            provider
+            provider,
+            settings
           ),
           contact:contacts!contact_id (
             id,
@@ -210,7 +214,7 @@ export function useConversation(conversationId: string | undefined) {
       if (!data) return null;
 
       const base = transform(data as DbMessagingConversation);
-      const channel = data.channel as { id: string; name: string; channel_type: string; provider: string } | null;
+      const channel = data.channel as { id: string; name: string; channel_type: string; provider: string; settings?: { color?: string; short?: string } } | null;
       const contact = data.contact as { id: string; name: string; email: string; phone: string } | null;
       const assignedUser = data.assigned_user as { id: string; name: string; avatar_url: string } | null;
 
@@ -218,6 +222,8 @@ export function useConversation(conversationId: string | undefined) {
         ...base,
         channelType: (channel?.channel_type || 'whatsapp') as ConversationView['channelType'],
         channelName: channel?.name || 'Canal',
+        channelColor: channel?.settings?.color,
+        channelShortName: channel?.settings?.short,
         contactName: contact?.name,
         contactEmail: contact?.email,
         contactPhone: contact?.phone,

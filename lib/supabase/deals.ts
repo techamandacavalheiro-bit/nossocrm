@@ -76,6 +76,7 @@ export interface DbDeal {
   stage_id: string | null;
   /** ID do contato associado. */
   contact_id: string | null;
+  channel_id?: string | null;
   /** ID da empresa CRM associada. */
   client_company_id: string | null;
   /** Resumo gerado por IA. */
@@ -167,6 +168,7 @@ const transformDeal = (db: DbDeal | DbDealWithItems, items?: DbDealItem[]): Deal
     priority: (db.priority as Deal['priority']) || 'medium',
     boardId: db.board_id || '',
     contactId: db.contact_id || '',
+    channelId: db.channel_id || undefined,
     clientCompanyId: db.client_company_id || undefined,
     companyId: db.client_company_id || '', // @deprecated - backwards compatibility
     aiSummary: db.ai_summary || undefined,

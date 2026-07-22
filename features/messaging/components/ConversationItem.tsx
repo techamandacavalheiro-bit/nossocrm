@@ -7,6 +7,7 @@ import { Clock, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { sanitizeUrl } from '@/lib/utils/sanitize';
 import { ChannelIndicator } from './ChannelIndicator';
+import { ChannelBadge } from './ChannelBadge';
 import { PresenceIndicator } from './PresenceIndicator';
 import type { ConversationView } from '@/lib/messaging/types';
 import type { PresenceStatus } from '@/lib/messaging/hooks/useContactPresence';
@@ -28,6 +29,9 @@ export const ConversationItem = memo(function ConversationItem({
     externalContactName,
     externalContactAvatar,
     channelType,
+    channelName,
+    channelColor,
+    channelShortName,
     lastMessagePreview,
     lastMessageAt,
     lastMessageDirection,
@@ -84,15 +88,23 @@ export const ConversationItem = memo(function ConversationItem({
       <div className="flex-1 min-w-0">
         {/* Name and time */}
         <div className="flex items-center justify-between gap-2">
-          <span
-            className={cn(
-              'font-medium truncate text-sm',
-              unreadCount > 0
-                ? 'text-slate-900 dark:text-white'
-                : 'text-slate-700 dark:text-slate-300'
-            )}
-          >
-            {displayName}
+          <span className="flex items-center gap-1.5 min-w-0">
+            <span
+              className={cn(
+                'font-medium truncate text-sm',
+                unreadCount > 0
+                  ? 'text-slate-900 dark:text-white'
+                  : 'text-slate-700 dark:text-slate-300'
+              )}
+            >
+              {displayName}
+            </span>
+            <ChannelBadge
+              name={channelName}
+              shortName={channelShortName}
+              color={channelColor}
+              className="flex-shrink-0"
+            />
           </span>
           <span className="text-xs text-slate-500 dark:text-slate-400 flex-shrink-0">
             {timeAgo}

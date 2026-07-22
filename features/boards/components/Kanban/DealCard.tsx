@@ -4,6 +4,8 @@ import { DealView } from '@/types';
 import { Building2, Hourglass, Trophy, XCircle } from 'lucide-react';
 import { ActivityStatusIcon } from './ActivityStatusIcon';
 import { priorityAriaLabelPtBr } from '@/lib/utils/priority';
+import { ChannelBadge } from '@/features/messaging/components/ChannelBadge';
+import { useConnectedChannelsQuery } from '@/lib/query/hooks/useChannelsQuery';
 
 interface DealCardProps {
   deal: DealView;
@@ -150,6 +152,11 @@ const DealCardComponent: React.FC<DealCardProps> = ({
     return parts.join(', ');
   };
 
+  const { data: canais } = useConnectedChannelsQuery();
+  const canalOrigem = deal.channelId
+    ? canais?.find((c) => c.id === deal.channelId)
+    : undefined;
+
   return (
     <div
       data-deal-id={deal.id}
@@ -204,7 +211,15 @@ const DealCardComponent: React.FC<DealCardProps> = ({
         </div>
       )}
 
-      <div className="flex gap-1 mb-2 flex-wrap">
+      <div className="flex gap-1 mb-2 flex-wrap items-center">
+        {/* Origem: de qual número/instância veio o negócio */}
+        {canalOrigem && (
+          <ChannelBadge
+            name={canalOrigem.name}
+            shortName={canalOrigem.settings?.short}
+            color={canalOrigem.settings?.color}
+          />
+        )}
         {/* Won/Lost status badge */}
         {deal.isWon && (
           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-800/40 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-700">

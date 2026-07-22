@@ -152,6 +152,10 @@ export interface ChannelSettings {
    * Use this instead of externalIdentifier (which stores the numeric phoneNumberId).
    */
   displayPhone?: string;
+  /** Cor de identidade da instância — usada nas etiquetas de origem (inbox e funil) */
+  color?: string;
+  /** Apelido curto pra etiquetas (ex: "Gaia", "Barbearia") */
+  short?: string;
   /** Auto-reply when offline */
   autoReplyEnabled?: boolean;
   autoReplyMessage?: string;

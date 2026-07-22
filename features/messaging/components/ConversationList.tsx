@@ -5,7 +5,9 @@ import { Search, Filter, Inbox, CheckCircle, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ConversationItem } from './ConversationItem';
 import { ChannelIndicator } from './ChannelIndicator';
+import { ChannelBadge } from './ChannelBadge';
 import { useConversations } from '@/lib/query/hooks/useConversationsQuery';
+import { useConnectedChannelsQuery } from '@/lib/query/hooks/useChannelsQuery';
 import type { ConversationFilters, ConversationStatus, ChannelType, ConversationView } from '@/lib/messaging/types';
 import type { PresenceStatus } from '@/lib/messaging/hooks/useContactPresence';
 
@@ -60,6 +62,7 @@ export const ConversationList = memo(function ConversationList({
   const [statusFilter, setStatusFilter] = useState<ConversationStatus | 'all'>('open');
   const [searchQuery, setSearchQuery] = useState('');
   const [channelFilter, setChannelFilter] = useState<ChannelType | 'all'>('all');
+  const [channelIdFilter, setChannelIdFilter] = useState<string | 'all'>('all');
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
@@ -68,14 +71,18 @@ export const ConversationList = memo(function ConversationList({
     businessUnitId,
     search: searchQuery || undefined,
     channelType: channelFilter !== 'all' ? channelFilter : undefined,
+    channelId: channelIdFilter !== 'all' ? channelIdFilter : undefined,
     hasUnread: showUnreadOnly || undefined,
-  }), [statusFilter, businessUnitId, searchQuery, channelFilter, showUnreadOnly]);
+  }), [statusFilter, businessUnitId, searchQuery, channelFilter, channelIdFilter, showUnreadOnly]);
+
+  const { data: connectedChannels } = useConnectedChannelsQuery();
 
   const { data: conversations, isLoading, error } = useConversations(filters);
 
   const activeFiltersCount = useMemo(() => {
     let count = 0;
     if (channelFilter !== 'all') count++;
+    if (channelIdFilter !== 'all') count++;
     if (showUnreadOnly) count++;
     return count;
   }, [channelFilter, showUnreadOnly]);
@@ -167,6 +174,50 @@ export const ConversationList = memo(function ConversationList({
         {/* Additional Filters Panel */}
         {showFilters && (
           <div className="mt-3 p-3 bg-slate-50 dark:bg-white/5 rounded-lg space-y-3">
+            {/* Filtro por número/instância — só aparece com mais de um canal conectado */}
+            {(connectedChannels?.length ?? 0) > 1 && (
+              <div>
+                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
+                  Número
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setChannelIdFilter('all')}
+                    className={cn(
+                      'px-2.5 py-1 text-xs font-medium rounded-full transition-colors',
+                      channelIdFilter === 'all'
+                        ? 'bg-primary-500 text-white'
+                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10 hover:border-primary-300'
+                    )}
+                  >
+                    Todos
+                  </button>
+                  {connectedChannels?.map((ch) => {
+                    return (
+                      <button
+                        key={ch.id}
+                        type="button"
+                        onClick={() => setChannelIdFilter(ch.id)}
+                        className={cn(
+                          'px-1.5 py-1 rounded-full transition-colors border',
+                          channelIdFilter === ch.id
+                            ? 'border-primary-500 bg-primary-50 dark:bg-primary-500/10'
+                            : 'border-slate-200 dark:border-white/10 hover:border-primary-300'
+                        )}
+                      >
+                        <ChannelBadge
+                          name={ch.name}
+                          shortName={ch.settings?.short}
+                          color={ch.settings?.color}
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Channel Filter */}
             <div>
               <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">

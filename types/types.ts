@@ -216,6 +216,7 @@ export interface Deal {
   title: string; // Ex: "Licença Anual"
   contactId: string; // Relacionamento
   boardId: string; // Qual board este deal pertence
+  channelId?: string; // Canal/número que originou o negócio (etiqueta de origem)
   value: number;
   items: DealItem[]; // Lista de Produtos
   status: string; // Stage ID dentro do board (UUID)

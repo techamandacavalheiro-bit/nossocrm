@@ -8,6 +8,7 @@ export { TemplateSelector } from './TemplateSelector';
 
 // UI Components
 export { ChannelIndicator } from './ChannelIndicator';
+export { ChannelBadge } from './ChannelBadge';
 export { WindowExpiryBadge } from './WindowExpiryBadge';
 export { BusinessUnitSelector } from './BusinessUnitSelector';
 export { ContactPanel } from './ContactPanel';

@@ -189,6 +189,10 @@ export interface ConversationView extends MessagingConversation {
   /** Channel info */
   channelType: ChannelType;
   channelName: string;
+  /** Cor de identidade da instância (messaging_channels.settings.color) */
+  channelColor?: string;
+  /** Apelido curto da instância pra badges (messaging_channels.settings.short) */
+  channelShortName?: string;
   /** Channel provider (e.g. 'z-api', 'meta-cloud', 'resend'). Window expiry only applies to 'meta-cloud'. */
   channelProvider?: string;
   /** Contact info (if linked) */
