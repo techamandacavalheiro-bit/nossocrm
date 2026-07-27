@@ -163,12 +163,16 @@ export async function POST(req: Request) {
   // Org AI settings + sales script
   const { data: orgSettings } = await supabase
     .from('organization_settings')
-    .select('ai_enabled, ai_model, ai_google_key, sales_script')
+    .select('copilot_enabled, ai_model, ai_google_key, sales_script')
     .eq('organization_id', profile.organization_id)
     .single();
 
-  if (orgSettings?.ai_enabled === false) {
-    return json({ error: 'IA desativada na organização' }, 403);
+  // Governado por copilot_enabled, NÃO por ai_enabled: esta rota é assistiva
+  // (só sugere texto pro atendente, nunca envia nada). O ai_enabled liga o agente
+  // que responde e ENVIA sozinho ao cliente — que fica desligado quando outro bot
+  // já atende o número. Prender os dois na mesma flag impedia usar o Copiloto.
+  if (orgSettings?.copilot_enabled === false) {
+    return json({ error: 'Copiloto desativado nas configurações da organização' }, 403);
   }
   const apiKey = orgSettings?.ai_google_key;
   if (!apiKey) {

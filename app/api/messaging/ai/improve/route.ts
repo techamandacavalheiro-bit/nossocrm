@@ -111,12 +111,14 @@ export async function POST(req: Request) {
 
   const { data: orgSettings } = await supabase
     .from('organization_settings')
-    .select('ai_enabled, ai_model, ai_google_key, sales_script')
+    .select('copilot_enabled, ai_model, ai_google_key, sales_script')
     .eq('organization_id', profile.organization_id)
     .single();
 
-  if (orgSettings?.ai_enabled === false) {
-    return json({ error: 'IA desativada na organização' }, 403);
+  // Assistivo como o Copiloto: reescreve o rascunho do atendente, nunca envia.
+  // Ver o comentário em ../copilot/route.ts sobre copilot_enabled vs ai_enabled.
+  if (orgSettings?.copilot_enabled === false) {
+    return json({ error: 'Copiloto desativado nas configurações da organização' }, 403);
   }
   const apiKey = orgSettings?.ai_google_key;
   if (!apiKey) {
