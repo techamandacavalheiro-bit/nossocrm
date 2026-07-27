@@ -623,7 +623,9 @@ export const MessageBubble = memo(function MessageBubble({
       )}
     >
       {/* Bubble + reaction pills */}
-      <div className="relative max-w-[70%]">
+      {/* min-w-0 libera o encolhimento; sem ele o `break-words` do texto não age,
+          porque overflow-wrap não reduz o min-content de uma palavra gigante */}
+      <div className="relative max-w-[70%] min-w-0">
         <div
           className={cn(
             'rounded-2xl px-4 py-2 shadow-sm',

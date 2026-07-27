@@ -188,7 +188,10 @@ export function MessagingPage({ initialConversationId }: MessagingPageProps = {}
       </div>
 
       {/* Message Thread */}
-      <div className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-900/50">
+      {/* min-w-0: sem isto o item flex não encolhe abaixo do próprio conteúdo, e
+          uma mensagem com string longa sem espaço (código Pix, URL) empurra a
+          coluna inteira pra fora da tela, criando scroll horizontal na página */}
+      <div className="flex-1 min-w-0 flex flex-col bg-slate-50 dark:bg-slate-900/50">
         {selectedConversation ? (
           <>
             {/* Header */}
