@@ -1,9 +1,14 @@
 'use client';
 
 import React, { memo, useCallback, useEffect, useState } from 'react';
-import { Sparkles, Brain, Shield, MessageCircle, X, Loader2, Copy, Check, ArrowRightCircle } from 'lucide-react';
+import { Sparkles, Brain, Shield, MessageCircle, X, Loader2, Copy, Check, ArrowRightCircle, Package } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCopilot, type CopilotAction } from '@/lib/query/hooks/useAiCopilot';
+import { productsService } from '@/lib/supabase/products';
+import type { Product } from '@/types';
+
+/** Guarda o produto escolhido por conversa, pra escolha sobreviver a sair e voltar. */
+const productStorageKey = (conversationId: string) => `copilot:product:${conversationId}`;
 
 interface CopilotPanelProps {
   open: boolean;
@@ -49,8 +54,38 @@ export const CopilotPanel = memo(function CopilotPanel({
   } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [productId, setProductId] = useState<string>('');
 
   const copilot = useCopilot();
+
+  // Catálogo do seletor: só produtos ativos que fazem sentido vender no chat
+  useEffect(() => {
+    if (!open) return;
+    let cancelado = false;
+    productsService.getActive().then(({ data }) => {
+      if (cancelado) return;
+      setProducts(data.filter(p => p.copilotEnabled !== false));
+    });
+    return () => { cancelado = true; };
+  }, [open]);
+
+  // Retoma o produto escolhido antes nesta conversa
+  useEffect(() => {
+    if (!open || typeof window === 'undefined') return;
+    setProductId(window.localStorage.getItem(productStorageKey(conversationId)) ?? '');
+  }, [open, conversationId]);
+
+  const handleProductChange = useCallback((next: string) => {
+    setProductId(next);
+    setResult(null);
+    if (typeof window === 'undefined') return;
+    const key = productStorageKey(conversationId);
+    if (next) window.localStorage.setItem(key, next);
+    else window.localStorage.removeItem(key);
+  }, [conversationId]);
+
+  const selectedProduct = products.find(p => p.id === productId);
 
   // Lock body scroll while open
   useEffect(() => {
@@ -90,6 +125,7 @@ export const CopilotPanel = memo(function CopilotPanel({
         conversationId,
         action: activeTab,
         userInput: requiresInput ? userInput.trim() : undefined,
+        productId: productId || null,
       },
       {
         onSuccess: (data) => {
@@ -104,7 +140,7 @@ export const CopilotPanel = memo(function CopilotPanel({
         },
       }
     );
-  }, [conversationId, activeTab, userInput, requiresInput, copilot]);
+  }, [conversationId, activeTab, userInput, requiresInput, productId, copilot]);
 
   const handleCopy = useCallback(async (text: string, idx: number) => {
     try {
@@ -152,6 +188,41 @@ export const CopilotPanel = memo(function CopilotPanel({
           >
             <X className="w-5 h-5" />
           </button>
+        </div>
+
+        {/* Produto em foco — define o que a IA pode citar de preço e argumento */}
+        <div className="px-4 py-2.5 border-b border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/30">
+          <label
+            htmlFor="copilot-produto"
+            className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold text-slate-500 dark:text-slate-400 mb-1.5"
+          >
+            <Package className="w-3 h-3" />
+            Vendendo agora
+          </label>
+          <select
+            id="copilot-produto"
+            value={productId}
+            onChange={(e) => handleProductChange(e.target.value)}
+            className={cn(
+              'w-full px-2.5 py-2 text-sm rounded-lg',
+              'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700',
+              'text-slate-900 dark:text-slate-100',
+              'focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500',
+            )}
+          >
+            <option value="">Geral — todo o catálogo</option>
+            {products.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+                {p.price > 0 ? ` — R$ ${p.price.toFixed(2).replace('.', ',')}` : ''}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+            {selectedProduct
+              ? 'A IA vai usar o preço, as condições e os contornos de objeção deste produto.'
+              : 'Escolha um produto pra IA poder falar preço e condições com segurança.'}
+          </p>
         </div>
 
         {/* Tabs */}

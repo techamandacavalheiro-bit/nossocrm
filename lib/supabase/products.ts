@@ -7,7 +7,7 @@
  */
 
 import { supabase } from './client';
-import { Product } from '@/types';
+import { Product, ProductObjection } from '@/types';
 import { sanitizeUUID } from './utils';
 
 // =============================================================================
@@ -49,7 +49,22 @@ type DbProduct = {
   created_at: string;
   updated_at: string;
   owner_id: string | null;
+  // Playbook de vendas — alimenta o Copiloto quando o produto está selecionado
+  promise: string | null;
+  audience: string | null;
+  payment_terms: string | null;
+  deliverables: string | null;
+  checkout_url: string | null;
+  objections: ProductObjection[] | null;
+  copilot_enabled: boolean | null;
 };
+
+/**
+ * Colunas lidas em toda consulta de produto — inclui o playbook de vendas.
+ * Precisa ser uma string literal única: o supabase-js infere o tipo do retorno
+ * a partir dela, e uma concatenação faz a inferência cair pra GenericStringError.
+ */
+const PRODUCT_COLUMNS = 'id, organization_id, name, description, price, sku, active, created_at, updated_at, owner_id, promise, audience, payment_terms, deliverables, checkout_url, objections, copilot_enabled' as const;
 
 function transformProduct(db: DbProduct): Product {
   return {
@@ -60,7 +75,40 @@ function transformProduct(db: DbProduct): Product {
     price: Number(db.price ?? 0),
     sku: db.sku || undefined,
     active: db.active ?? true,
+    promise: db.promise || undefined,
+    audience: db.audience || undefined,
+    paymentTerms: db.payment_terms || undefined,
+    deliverables: db.deliverables || undefined,
+    checkoutUrl: db.checkout_url || undefined,
+    objections: Array.isArray(db.objections) ? db.objections : [],
+    copilotEnabled: db.copilot_enabled ?? true,
   };
+}
+
+/** Campos do playbook aceitos em create/update, no formato da UI (camelCase). */
+export type ProductPlaybookInput = Partial<{
+  promise: string;
+  audience: string;
+  paymentTerms: string;
+  deliverables: string;
+  checkoutUrl: string;
+  objections: ProductObjection[];
+  copilotEnabled: boolean;
+}>;
+
+/** Traduz o playbook de camelCase (UI) para snake_case (banco). */
+function playbookToDb(input: ProductPlaybookInput): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (input.promise !== undefined) out.promise = input.promise.trim() || null;
+  if (input.audience !== undefined) out.audience = input.audience.trim() || null;
+  if (input.paymentTerms !== undefined) out.payment_terms = input.paymentTerms.trim() || null;
+  if (input.deliverables !== undefined) out.deliverables = input.deliverables.trim() || null;
+  if (input.checkoutUrl !== undefined) out.checkout_url = input.checkoutUrl.trim() || null;
+  if (input.copilotEnabled !== undefined) out.copilot_enabled = input.copilotEnabled;
+  if (input.objections !== undefined) {
+    out.objections = input.objections.filter(o => o.q.trim() && o.a.trim());
+  }
+  return out;
 }
 
 export const productsService = {
@@ -70,7 +118,7 @@ export const productsService = {
 
       const { data, error } = await supabase
         .from('products')
-        .select('id, organization_id, name, description, price, sku, active, created_at, updated_at, owner_id')
+        .select(PRODUCT_COLUMNS)
         .order('created_at', { ascending: false });
 
       if (error) return { data: [], error };
@@ -89,7 +137,7 @@ export const productsService = {
 
       const { data, error } = await supabase
         .from('products')
-        .select('id, organization_id, name, description, price, sku, active, created_at, updated_at, owner_id')
+        .select(PRODUCT_COLUMNS)
         .eq('active', true)
         .order('created_at', { ascending: false });
 
@@ -102,7 +150,9 @@ export const productsService = {
     }
   },
 
-  async create(input: { name: string; price: number; sku?: string; description?: string }): Promise<{ data: Product | null; error: Error | null }> {
+  async create(
+    input: { name: string; price: number; sku?: string; description?: string } & ProductPlaybookInput
+  ): Promise<{ data: Product | null; error: Error | null }> {
     try {
       if (!supabase) return { data: null, error: new Error('Supabase não configurado') };
 
@@ -119,8 +169,9 @@ export const productsService = {
           active: true,
           owner_id: sanitizeUUID(user?.id),
           organization_id: organizationId,
+          ...playbookToDb(input),
         })
-        .select('id, organization_id, name, description, price, sku, active, created_at, updated_at, owner_id')
+        .select(PRODUCT_COLUMNS)
         .single();
 
       if (error) return { data: null, error };
@@ -130,7 +181,10 @@ export const productsService = {
     }
   },
 
-  async update(id: string, updates: Partial<{ name: string; price: number; sku?: string; description?: string; active: boolean }>): Promise<{ error: Error | null }> {
+  async update(
+    id: string,
+    updates: Partial<{ name: string; price: number; sku?: string; description?: string; active: boolean }> & ProductPlaybookInput
+  ): Promise<{ error: Error | null }> {
     try {
       if (!supabase) return { error: new Error('Supabase não configurado') };
 
@@ -140,6 +194,7 @@ export const productsService = {
       if (updates.sku !== undefined) payload.sku = updates.sku || null;
       if (updates.description !== undefined) payload.description = updates.description || null;
       if (updates.active !== undefined) payload.active = updates.active;
+      Object.assign(payload, playbookToDb(updates));
       payload.updated_at = new Date().toISOString();
 
       const { error } = await supabase

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Package, Pencil, Plus, Save, Trash2, ToggleLeft, ToggleRight, X } from 'lucide-react';
+import { Package, Pencil, Plus, Save, Trash2, ToggleLeft, ToggleRight, X, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
 import { productsService } from '@/lib/supabase';
-import type { Product } from '@/types';
+import type { Product, ProductObjection } from '@/types';
 
 function formatBRL(v: number) {
   try {
@@ -10,6 +10,196 @@ function formatBRL(v: number) {
     return `R$ ${v.toFixed(2)}`;
   }
 }
+
+/** Estado do playbook de vendas em edição. */
+interface PlaybookDraft {
+  promise: string;
+  audience: string;
+  paymentTerms: string;
+  deliverables: string;
+  checkoutUrl: string;
+  objections: ProductObjection[];
+  copilotEnabled: boolean;
+}
+
+const PLAYBOOK_VAZIO: PlaybookDraft = {
+  promise: '', audience: '', paymentTerms: '', deliverables: '',
+  checkoutUrl: '', objections: [], copilotEnabled: true,
+};
+
+function playbookDoProduto(p: Product): PlaybookDraft {
+  return {
+    promise: p.promise || '',
+    audience: p.audience || '',
+    paymentTerms: p.paymentTerms || '',
+    deliverables: p.deliverables || '',
+    checkoutUrl: p.checkoutUrl || '',
+    objections: p.objections ? p.objections.map(o => ({ ...o })) : [],
+    copilotEnabled: p.copilotEnabled !== false,
+  };
+}
+
+/** Um produto "sabe vender" quando tem pelo menos promessa ou condições escritas. */
+function temPlaybook(p: Product): boolean {
+  return Boolean(p.promise || p.paymentTerms || (p.objections && p.objections.length > 0));
+}
+
+const CAMPOS_TEXTO: Array<{
+  key: 'promise' | 'audience' | 'paymentTerms' | 'deliverables';
+  label: string;
+  hint: string;
+  rows: number;
+}> = [
+  {
+    key: 'promise', label: 'Promessa — o que esse produto entrega', rows: 3,
+    hint: 'A transformação, em uma ou duas frases. É daqui que a IA tira o ângulo da abordagem.',
+  },
+  {
+    key: 'audience', label: 'Pra quem é (e pra quem não é)', rows: 3,
+    hint: 'Ajuda a IA a perceber quando o cliente da conversa NÃO é público desse produto.',
+  },
+  {
+    key: 'paymentTerms', label: 'Preço e condições', rows: 4,
+    hint: 'Parcelamento, formas de pagamento, garantia. É a única fonte de preço que a IA pode citar — se estiver errado aqui, o atendente manda valor errado.',
+  },
+  {
+    key: 'deliverables', label: 'O que está incluso', rows: 4,
+    hint: 'A lista de entregas, uma por linha.',
+  },
+];
+
+const INPUT_CLASS =
+  'w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/40';
+
+/**
+ * Editor do playbook de vendas — é o que o Copiloto lê quando o atendente
+ * seleciona este produto numa conversa.
+ */
+const PlaybookEditor: React.FC<{
+  value: PlaybookDraft;
+  onChange: (next: PlaybookDraft) => void;
+}> = ({ value, onChange }) => {
+  const [aberto, setAberto] = useState(false);
+  const set = <K extends keyof PlaybookDraft>(key: K, v: PlaybookDraft[K]) =>
+    onChange({ ...value, [key]: v });
+
+  const setObjection = (i: number, campo: 'q' | 'a', v: string) => {
+    const objections = value.objections.map((o, idx) => (idx === i ? { ...o, [campo]: v } : o));
+    set('objections', objections);
+  };
+
+  return (
+    <div className="mt-3 border-t border-slate-200 dark:border-white/10 pt-3">
+      <button
+        type="button"
+        onClick={() => setAberto(!aberto)}
+        className="w-full flex items-center justify-between p-2.5 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-500/30 hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors"
+      >
+        <span className="flex items-center gap-2 text-sm font-semibold text-purple-800 dark:text-purple-200">
+          <Sparkles className="h-4 w-4" />
+          Playbook de vendas (Copiloto)
+        </span>
+        {aberto ? <ChevronUp className="h-4 w-4 text-purple-600" /> : <ChevronDown className="h-4 w-4 text-purple-600" />}
+      </button>
+
+      {aberto && (
+        <div className="mt-2 space-y-3 p-3 rounded-lg bg-purple-50/30 dark:bg-purple-900/10 border border-purple-100 dark:border-purple-500/20">
+          <p className="text-xs text-slate-600 dark:text-slate-300">
+            O atendente escolhe este produto no Copiloto durante a conversa, e a IA
+            passa a responder com estas informações — inclusive citando preço.
+          </p>
+
+          <label className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-200">
+            <input
+              type="checkbox"
+              checked={value.copilotEnabled}
+              onChange={(e) => set('copilotEnabled', e.target.checked)}
+              className="rounded border-slate-300"
+            />
+            Mostrar este produto no seletor do Copiloto
+          </label>
+
+          {CAMPOS_TEXTO.map((campo) => (
+            <div key={campo.key}>
+              <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                {campo.label}
+              </label>
+              <textarea
+                value={value[campo.key]}
+                onChange={(e) => set(campo.key, e.target.value)}
+                rows={campo.rows}
+                className={`${INPUT_CLASS} resize-y`}
+              />
+              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{campo.hint}</p>
+            </div>
+          ))}
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
+              Link de checkout
+            </label>
+            <input
+              value={value.checkoutUrl}
+              onChange={(e) => set('checkoutUrl', e.target.value)}
+              placeholder="https://..."
+              className={INPUT_CLASS}
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                Objeções e como contornar
+              </label>
+              <button
+                type="button"
+                onClick={() => set('objections', [...value.objections, { q: '', a: '' }])}
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-purple-600 dark:text-purple-400 hover:underline"
+              >
+                <Plus className="h-3 w-3" /> Adicionar
+              </button>
+            </div>
+            {value.objections.length === 0 ? (
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 italic py-2">
+                Nenhuma cadastrada. Sem isso, a IA improvisa o contorno em vez de usar o seu.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {value.objections.map((o, i) => (
+                  <div key={i} className="rounded-lg border border-slate-200 dark:border-white/10 p-2 space-y-1.5 bg-white dark:bg-black/10">
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={o.q}
+                        onChange={(e) => setObjection(i, 'q', e.target.value)}
+                        placeholder='O que o cliente diz. Ex: "tá caro"'
+                        className={INPUT_CLASS}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => set('objections', value.objections.filter((_, idx) => idx !== i))}
+                        className="shrink-0 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
+                        aria-label="Remover objeção"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                      </button>
+                    </div>
+                    <textarea
+                      value={o.a}
+                      onChange={(e) => setObjection(i, 'a', e.target.value)}
+                      placeholder="Como contornar — o argumento que funciona"
+                      rows={2}
+                      className={`${INPUT_CLASS} resize-y`}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 /**
  * Componente React `ProductsCatalogManager`.
@@ -32,6 +222,7 @@ export const ProductsCatalogManager: React.FC = () => {
   const [editPrice, setEditPrice] = useState<string>('0');
   const [editSku, setEditSku] = useState('');
   const [editDescription, setEditDescription] = useState('');
+  const [editPlaybook, setEditPlaybook] = useState<PlaybookDraft>(PLAYBOOK_VAZIO);
 
   const load = async () => {
     setLoading(true);
@@ -107,6 +298,7 @@ export const ProductsCatalogManager: React.FC = () => {
     setEditPrice(String(p.price ?? 0));
     setEditSku(p.sku || '');
     setEditDescription(p.description || '');
+    setEditPlaybook(playbookDoProduto(p));
   };
 
   const cancelEdit = () => {
@@ -115,6 +307,7 @@ export const ProductsCatalogManager: React.FC = () => {
     setEditPrice('0');
     setEditSku('');
     setEditDescription('');
+    setEditPlaybook(PLAYBOOK_VAZIO);
   };
 
   const saveEdit = async () => {
@@ -138,6 +331,7 @@ export const ProductsCatalogManager: React.FC = () => {
       price,
       sku: editSku.trim() || undefined,
       description: editDescription.trim() || undefined,
+      ...editPlaybook,
     });
     if (res.error) {
       setError(res.error.message);
@@ -250,9 +444,11 @@ export const ProductsCatalogManager: React.FC = () => {
                 return (
                   <div
                     key={p.id}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50/60 dark:bg-white/3 px-4 py-3"
+                    className={`gap-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50/60 dark:bg-white/3 px-4 py-3 ${
+                      isEditing ? 'flex flex-col' : 'flex items-center justify-between'
+                    }`}
                   >
-                    <div className="min-w-0">
+                    <div className={isEditing ? 'w-full order-2' : 'min-w-0'}>
                       {isEditing ? (
                         <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
                           <div className="sm:col-span-5">
@@ -288,6 +484,7 @@ export const ProductsCatalogManager: React.FC = () => {
                               className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/40"
                             />
                           </div>
+                          <PlaybookEditor value={editPlaybook} onChange={setEditPlaybook} />
                         </div>
                       ) : (
                         <>
@@ -298,6 +495,14 @@ export const ProductsCatalogManager: React.FC = () => {
                                 Inativo
                               </span>
                             )}
+                            {temPlaybook(p) && (
+                              <span
+                                className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300"
+                                title="O Copiloto sabe vender este produto"
+                              >
+                                <Sparkles className="h-3 w-3" /> Copiloto
+                              </span>
+                            )}
                           </div>
                           <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
                             {formatBRL(p.price)}{p.sku ? ` • SKU: ${p.sku}` : ''}{p.description ? ` • ${p.description}` : ''}
@@ -305,7 +510,7 @@ export const ProductsCatalogManager: React.FC = () => {
                         </>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className={`flex items-center gap-2 shrink-0 ${isEditing ? 'self-end order-1' : ''}`}>
                       {isEditing ? (
                         <>
                           <button

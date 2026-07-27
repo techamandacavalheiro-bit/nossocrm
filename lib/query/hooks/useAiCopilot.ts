@@ -16,6 +16,8 @@ interface CopilotInput {
   conversationId: string;
   action: CopilotAction;
   userInput?: string;
+  /** Produto em foco nesta conversa. null/undefined = "Geral" (todo o catálogo). */
+  productId?: string | null;
 }
 
 export function useCopilot() {

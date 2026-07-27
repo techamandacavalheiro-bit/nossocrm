@@ -177,6 +177,15 @@ export interface Contact {
 }
 
 // ITEM 3: Produtos e Serviços
+
+/** Objeção comum do cliente e o contorno pronto pro atendente usar. */
+export interface ProductObjection {
+  /** A objeção como o cliente fala. Ex: "tá caro". */
+  q: string;
+  /** O contorno que o atendente deve usar. */
+  a: string;
+}
+
 export interface Product {
   id: string;
   organizationId?: OrganizationId; // Tenant FK (for RLS) - optional during migration
@@ -186,6 +195,20 @@ export interface Product {
   sku?: string;
   /** Se está ativo no catálogo (itens inativos não devem aparecer no dropdown do deal). */
   active?: boolean;
+
+  // --- Playbook de vendas: o que o Copiloto usa quando este produto está em foco ---
+  /** A transformação que o produto entrega. */
+  promise?: string;
+  /** Pra quem é (e pra quem não é). */
+  audience?: string;
+  /** Parcelamento, formas de pagamento e garantia. Fonte autorizada de preço pra IA. */
+  paymentTerms?: string;
+  /** O que está incluso. */
+  deliverables?: string;
+  checkoutUrl?: string;
+  objections?: ProductObjection[];
+  /** Se aparece no seletor do Copiloto. Produto de captação fica false. */
+  copilotEnabled?: boolean;
 }
 
 export interface DealItem {

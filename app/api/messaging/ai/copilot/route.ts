@@ -7,8 +7,14 @@
  * Body: {
  *   conversationId: string,
  *   action: 'suggest' | 'analyze' | 'objection' | 'ask',
- *   userInput?: string  // necessário para 'objection' e 'ask'
+ *   userInput?: string,  // necessário para 'objection' e 'ask'
+ *   productId?: string   // produto que o atendente escolheu focar; ausente = "Geral"
  * }
+ *
+ * Com productId, o prompt recebe o playbook daquele produto (preço, condições,
+ * promessa, entregas e contornos de objeção) e a IA fica AUTORIZADA a citar
+ * valores. Sem productId, recebe só o catálogo resumido e segue proibida de
+ * falar preço.
  *
  * Response:
  *   - 'suggest':  { type: 'suggestions', suggestions: string[] }
@@ -34,6 +40,8 @@ const RequestSchema = z.object({
   conversationId: z.string().uuid(),
   action: z.enum(['suggest', 'analyze', 'objection', 'ask']),
   userInput: z.string().max(2000).optional(),
+  /** Produto que o atendente escolheu focar nesta conversa. Ausente = "Geral". */
+  productId: z.string().uuid().nullish(),
 });
 
 const SuggestionsSchema = z.object({
@@ -74,6 +82,52 @@ function summarizeMessage(m: DbMessage): string {
 }
 
 const DEFAULT_SCRIPT = `Você é um copiloto de vendas. Tom de voz: cordial, profissional, brasileiro coloquial mas educado. Use português do Brasil. Mensagens curtas (1-3 frases). Nunca prometa resultados, nunca invente preços/horários, nunca substitua orientação profissional.`;
+
+/**
+ * A regra de preço muda conforme o atendente escolheu um produto ou não.
+ * Sem produto em foco, a IA não pode falar valor nenhum. Com produto, ela DEVE
+ * usar os valores do bloco — senão o modelo continua se recusando a citar o
+ * preço que acabamos de dar a ele, que é justamente o que trava a venda.
+ */
+const REGRA_PRECO_SEM_PRODUTO =
+  'NÃO invente preços, prazos ou horários — se o cliente perguntar valor, oriente o atendente a confirmar antes.';
+const REGRA_PRECO_COM_PRODUTO =
+  'Use os valores e condições EXATAMENTE como estão no bloco "Produto em foco" — pode citar preço, parcelamento e garantia com segurança. Fora do que está escrito ali, não invente nada (nem desconto, nem bônus, nem prazo).';
+
+interface DbProductPlaybook {
+  id: string;
+  name: string;
+  price: number | null;
+  promise: string | null;
+  audience: string | null;
+  payment_terms: string | null;
+  deliverables: string | null;
+  checkout_url: string | null;
+  objections: Array<{ q?: string; a?: string }> | null;
+}
+
+function formatPrice(price: number | null): string {
+  const n = Number(price ?? 0);
+  return n > 0 ? `R$ ${n.toFixed(2).replace('.', ',')}` : 'sem valor fixo';
+}
+
+/** Bloco completo do produto escolhido — é o que dá munição real pra IA. */
+function buildProductBlock(p: DbProductPlaybook): string {
+  const parts = [`### ${p.name} — ${formatPrice(p.price)}`];
+  if (p.promise) parts.push(`**O que entrega:** ${p.promise}`);
+  if (p.audience) parts.push(`**Público:** ${p.audience}`);
+  if (p.payment_terms) parts.push(`**Preço e condições:** ${p.payment_terms}`);
+  if (p.deliverables) parts.push(`**Está incluso:**\n${p.deliverables}`);
+  if (p.checkout_url) parts.push(`**Link de compra:** ${p.checkout_url}`);
+  const objections = (p.objections ?? []).filter(o => o?.q && o?.a);
+  if (objections.length > 0) {
+    parts.push(
+      '**Objeções e como contornar:**\n' +
+      objections.map(o => `- Cliente diz "${o.q}" → ${o.a}`).join('\n')
+    );
+  }
+  return parts.join('\n\n');
+}
 
 export async function POST(req: Request) {
   if (!isAllowedOrigin(req)) return json({ error: 'Forbidden' }, 403);
@@ -177,10 +231,49 @@ export async function POST(req: Request) {
     ? messages.map(summarizeMessage).join('\n')
     : '(conversa vazia)';
 
+  // Catálogo: produto escolhido pelo atendente OU resumo do que existe pra vender.
+  const PRODUCT_FIELDS =
+    'id, name, price, promise, audience, payment_terms, deliverables, checkout_url, objections';
+  let productBlock = '';
+  let regraPreco = REGRA_PRECO_SEM_PRODUTO;
+
+  if (parsed.data.productId) {
+    const { data: product } = await supabase
+      .from('products')
+      .select(PRODUCT_FIELDS)
+      .eq('id', parsed.data.productId)
+      .eq('organization_id', profile.organization_id)
+      .maybeSingle();
+    if (product) {
+      productBlock = `\n## Produto em foco (é ISTO que o atendente quer vender agora)\n${buildProductBlock(product as DbProductPlaybook)}\n`;
+      regraPreco = REGRA_PRECO_COM_PRODUTO;
+    }
+  }
+
+  // Sem produto escolhido, a IA ainda vê o catálogo resumido e pode sugerir qual oferecer.
+  if (!productBlock) {
+    const { data: catalog } = await supabase
+      .from('products')
+      .select('name, price, promise')
+      .eq('organization_id', profile.organization_id)
+      .eq('active', true)
+      .eq('copilot_enabled', true)
+      .limit(20);
+    if (catalog && catalog.length > 0) {
+      const linhas = catalog.map(
+        p => `- ${p.name} (${formatPrice(p.price)})${p.promise ? ` — ${p.promise.split('\n')[0]}` : ''}`
+      );
+      productBlock = `\n## Catálogo disponível\n${linhas.join('\n')}\n\nNenhum produto foi escolhido pra esta conversa. Se fizer sentido, ajude o atendente a identificar qual desses encaixa no que o cliente precisa — mas não cite valores sem confirmação.\n`;
+    }
+  }
+
   const contextBlock = `
 ## Script de vendas / instruções da empresa
 ${salesScript}
 
+## Regra de preço
+${regraPreco}
+${productBlock}
 ## Dados do contato
 ${contactInfo || '(sem dados extras)'}
 
@@ -196,7 +289,7 @@ ${transcript}
       const result = await generateObject({
         model,
         schema: SuggestionsSchema,
-        system: `Você é um copiloto que ajuda o atendente a responder. Gere 3 alternativas DIFERENTES de tom (direta / calorosa / com pergunta esclarecedora). Mensagens curtas, no máximo 2 frases. Siga o script de vendas e os dados do contato. NÃO invente preços/horários.\n\n${contextBlock}`,
+        system: `Você é um copiloto que ajuda o atendente a responder. Gere 3 alternativas DIFERENTES de tom (direta / calorosa / com pergunta esclarecedora). Mensagens curtas, no máximo 2 frases. Siga o script de vendas, os dados do contato e a REGRA DE PREÇO acima. Se houver um produto em foco, conduza para ele.\n\n${contextBlock}`,
         prompt: 'Gere 3 sugestões de resposta para o atendente enviar agora ao cliente.',
         temperature: 0.8,
       });
@@ -226,7 +319,11 @@ Siga o script da empresa e os dados do contato.\n\n${contextBlock}`,
       const result = await generateObject({
         model,
         schema: ObjectionSchema,
-        system: `Você ajuda o atendente a contornar objeções de venda. Use o script e os dados do contato. Para a objeção informada:
+        system: `Você ajuda o atendente a contornar objeções de venda. Use o script e os dados do contato, e respeite a REGRA DE PREÇO.
+
+IMPORTANTE: se o bloco do produto trouxer uma objeção parecida com a informada, use o contorno de lá como base — ele foi escrito pela dona do negócio e vale mais que qualquer improviso seu. Adapte ao contexto da conversa, não copie cru.
+
+Para a objeção informada:
 1. 'reframe': explique em 1-2 frases o ângulo correto pra reformular essa objeção
 2. 'suggestions': 2-3 respostas curtas prontas pro atendente enviar (estilo WhatsApp)\n\n${contextBlock}`,
         prompt: `Objeção do cliente: "${userInput}"\n\nGere o reframe + sugestões.`,
@@ -243,7 +340,7 @@ Siga o script da empresa e os dados do contato.\n\n${contextBlock}`,
       if (!userInput) return json({ error: 'Digite sua pergunta' }, 400);
       const result = await generateText({
         model,
-        system: `Você é um copiloto que responde dúvidas do atendente sobre o cliente atual. Use APENAS as informações disponíveis no histórico, nos dados do contato e no script. Se a informação não estiver disponível, diga claramente "não tenho essa informação". Resposta curta e direta.\n\n${contextBlock}`,
+        system: `Você é um copiloto que responde dúvidas do atendente sobre o cliente atual e sobre o produto em foco. Use APENAS as informações disponíveis no histórico, nos dados do contato, no script e no bloco de produto. Se a informação não estiver disponível, diga claramente "não tenho essa informação". Resposta curta e direta.\n\n${contextBlock}`,
         prompt: `Pergunta do atendente: "${userInput}"`,
         temperature: 0.3,
       });
